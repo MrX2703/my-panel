@@ -139,9 +139,9 @@ function getDefaultExpiry() {
 /**
  * Get all access keys
  */
-function getAllAccessKeys() {
-    const keysData = loadAccessKeys();
-    return keysData.keys;
+async function getAllAccessKeys() {
+    const keysData = await loadAccessKeys();
+    return keysData.keys || [];
 }
 
 // ────────────────────────────────────────────────
