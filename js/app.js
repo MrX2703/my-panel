@@ -10,7 +10,7 @@
 /**
  * Load Firebase configs from JSON file
  */
-async function loadFirebaseConfigsFromFile_v2() {
+async function loadFirebaseConfigs() {
     console.log('📢 Loading Firebase configs from JSON file...');
     try {
         const response = await fetch('data/firebase-configs.json');
@@ -56,9 +56,9 @@ async function initApp() {
 
     try {
         // Load Firebase configs from JSON file on startup
-        await loadFirebaseConfigsFromFile_v2();
+        await loadFirebaseConfigs();
     } catch (e) {
-        console.log('⚠️ Error in loadFirebaseConfigsFromFile:', e.message);
+        console.log('⚠️ Error in loadFirebaseConfigs:', e.message);
     }
 
     // Set up Telegram WebApp
@@ -352,7 +352,7 @@ window.showDashboard = showDashboard;
 window.setupEventListeners = setupEventListeners;
 window.handleLogin = handleLogin;
 window.setupKeyboardShortcuts = setupKeyboardShortcuts;
-window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile_v2;
+window.loadFirebaseConfigs = loadFirebaseConfigs;
 
 // ────────────────────────────────────────────────
 // START APP
