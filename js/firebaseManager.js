@@ -89,14 +89,13 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        // Test connection using devices.json
         const testUrl = `${url}/devices.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
         if (response.ok) {
             const data = await response.json();
             const count = data ? Object.keys(data).length : 0;
-            console.log(`📢 Test query returned ${count} devices`);
+            console.log(`✅ Test query returned ${count} devices`);
             
             firebaseInstances[id] = {
                 config: source,
@@ -157,11 +156,14 @@ async function fetchAllDevices() {
 }
 
 /**
- * Get device status from your data
- * Your data has: "status": false → offline, "status": true → online
+ * Get device status - FIXED for your data
+ * Your data has NO root status field
+ * Status is inside webhookEvent.sendSms.status
  */
 function getDeviceStatus(deviceData) {
-    // Check direct status field
+    // ============================================
+    // CHECK 1: Root level status (if exists)
+    // ============================================
     if (deviceData.status !== undefined) {
         const statusValue = deviceData.status;
         if (statusValue === true || statusValue === 'true' || statusValue === 'online') {
@@ -170,9 +172,28 @@ function getDeviceStatus(deviceData) {
         if (statusValue === false || statusValue === 'false' || statusValue === 'offline' || statusValue === null) {
             return 'offline';
         }
+        // If status is something else, treat as online
+        return 'online';
     }
     
-    // Check command status
+    // ============================================
+    // CHECK 2: webhookEvent.sendSms.status (YOUR DATA)
+    // ============================================
+    const webhookData = deviceData.webhookEvent?.sendSms || {};
+    if (webhookData.status) {
+        if (webhookData.status === 'pending' || webhookData.status === 'offline') {
+            return 'offline';
+        }
+        if (webhookData.status === 'sent' || webhookData.status === 'online') {
+            return 'online';
+        }
+        // If status is something else, treat as online
+        return 'online';
+    }
+    
+    // ============================================
+    // CHECK 3: command status
+    // ============================================
     const cmdData = deviceData.command || deviceData.commands || {};
     if (cmdData.status) {
         if (cmdData.status === 'pending' || cmdData.status === 'offline') {
@@ -183,17 +204,27 @@ function getDeviceStatus(deviceData) {
         }
     }
     
-    // Check webhook status
-    const webhookData = deviceData.webhookEvent?.sendSms || {};
-    if (webhookData.status) {
-        if (webhookData.status === 'pending' || webhookData.status === 'offline') {
+    // ============================================
+    // CHECK 4: action.status
+    // ============================================
+    if (deviceData.action?.status) {
+        if (deviceData.action.status === 'pending' || deviceData.action.status === 'offline') {
             return 'offline';
         }
-        if (webhookData.status === 'sent' || webhookData.status === 'online') {
+        if (deviceData.action.status === 'sent' || deviceData.action.status === 'online') {
             return 'online';
         }
     }
     
+    // ============================================
+    // DEFAULT: Check if any pending message exists
+    // ============================================
+    // If there's a webhookEvent with pending status, device is offline
+    if (deviceData.webhookEvent?.sendSms) {
+        return 'offline';
+    }
+    
+    // Default to online
     return 'online';
 }
 
@@ -202,12 +233,12 @@ function getDeviceStatus(deviceData) {
  */
 function extractPhoneNumber(deviceData) {
     const locations = [
-        deviceData.command?.number,
         deviceData.webhookEvent?.sendSms?.number,
+        deviceData.command?.number,
         deviceData.number,
         deviceData.phone,
-        deviceData.command?.to,
         deviceData.webhookEvent?.sendSms?.to,
+        deviceData.command?.to,
         deviceData.phoneNumber,
         deviceData.sms?.number
     ];
@@ -236,7 +267,6 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
-        // Use devices.json
         const apiUrl = `${url}/devices.json?auth=${key}`;
         console.log(`📢 Fetching from: devices.json`);
         
@@ -268,12 +298,14 @@ async function fetchDevicesFromSource(sourceId) {
                 if (isNaN(battery)) battery = 50;
             }
             
-            // Get status
+            // Get status - using fixed function
             const status = getDeviceStatus(deviceData);
             
             // Get SMS body
-            const commandData = deviceData.command || deviceData.commands || deviceData.webhookEvent?.sendSms || {};
-            const smsBody = commandData.body || commandData.message || commandData.text || '';
+            const webhookData = deviceData.webhookEvent?.sendSms || {};
+            const commandData = deviceData.command || deviceData.commands || {};
+            const smsBody = webhookData.body || webhookData.message || webhookData.text || 
+                           commandData.body || commandData.message || commandData.text || '';
             
             const device = {
                 id: deviceId,
@@ -283,14 +315,16 @@ async function fetchDevicesFromSource(sourceId) {
                 status: status,
                 battery: battery,
                 signal: '4G',
-                model: commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown',
+                model: webhookData.simSlot !== undefined ? `SIM ${parseInt(webhookData.simSlot) + 1}` : 
+                       (commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown'),
                 lastSeen: deviceData.lastMessageTime ? timestampToISO(deviceData.lastMessageTime) : new Date().toISOString(),
                 sims: phoneNumber !== 'N/A' ? [phoneNumber] : ['N/A'],
                 unread: 0,
                 raw: deviceData,
                 smsBody: smsBody,
-                smsSender: commandData.number || commandData.from || 'Unknown',
-                smsTime: commandData.timestamp ? timestampToISO(commandData.timestamp) : new Date().toISOString()
+                smsSender: webhookData.number || webhookData.from || commandData.number || commandData.from || 'Unknown',
+                smsTime: webhookData.timestamp ? timestampToISO(webhookData.timestamp) : 
+                         (commandData.timestamp ? timestampToISO(commandData.timestamp) : new Date().toISOString())
             };
             
             devices.push(device);
