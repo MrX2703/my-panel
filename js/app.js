@@ -10,13 +10,6 @@
 async function initApp() {
     console.log('🚀 Initializing SMS Dashboard...');
 
-    try {
-        // Load Firebase configs from GitHub on startup
-        await loadFirebaseConfigs();
-    } catch (e) {
-        console.log('⚠️ Error loading Firebase configs:', e.message);
-    }
-
     // Set up Telegram WebApp
     setupTelegramApp();
 
@@ -37,17 +30,12 @@ async function initApp() {
     console.log('✅ App initialized');
 }
 
-/**
- * Set up Telegram WebApp
- */
 function setupTelegramApp() {
     try {
         const tg = window.Telegram?.WebApp;
         if (tg) {
             tg.expand();
             tg.enableClosingConfirmation();
-            
-            // Set up main button (optional)
             tg.MainButton.text = 'Refresh';
             tg.MainButton.onClick(() => {
                 if (isUserLoggedIn() && typeof refreshDashboard === 'function') {
@@ -55,7 +43,6 @@ function setupTelegramApp() {
                 }
             });
             tg.MainButton.show();
-            
             console.log('✅ Telegram WebApp initialized');
         }
     } catch (error) {
@@ -67,38 +54,24 @@ function setupTelegramApp() {
 // SCREEN MANAGEMENT
 // ────────────────────────────────────────────────
 
-/**
- * Show login screen
- */
 function showLoginScreen() {
     document.getElementById('loginScreen').classList.remove('hidden');
     document.getElementById('dashboardView').classList.add('hidden');
     document.getElementById('deviceDetailView').classList.remove('active');
     document.getElementById('deviceDetailView').classList.add('hidden');
-    
-    // Clear login error
     clearLoginError();
-    
-    // Focus on input
     const input = document.getElementById('accessKeyInput');
     if (input) {
         setTimeout(() => input.focus(), 300);
     }
 }
 
-/**
- * Show dashboard
- */
 async function showDashboard() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('dashboardView').classList.remove('hidden');
     document.getElementById('deviceDetailView').classList.remove('active');
     document.getElementById('deviceDetailView').classList.add('hidden');
-    
-    // Update admin button visibility
     await updateAdminButtonVisibility();
-    
-    // Load dashboard data
     if (typeof loadDashboardData === 'function') {
         loadDashboardData();
     }
@@ -108,11 +81,7 @@ async function showDashboard() {
 // EVENT LISTENERS
 // ────────────────────────────────────────────────
 
-/**
- * Set up all event listeners
- */
 function setupEventListeners() {
-    // ── Login ──
     const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) {
         loginBtn.addEventListener('click', handleLogin);
@@ -127,7 +96,6 @@ function setupEventListeners() {
         });
     }
 
-    // ── Admin Panel ──
     const adminLoginBtn = document.getElementById('adminLoginBtn');
     if (adminLoginBtn) {
         adminLoginBtn.addEventListener('click', async function() {
@@ -152,55 +120,42 @@ function setupEventListeners() {
         });
     }
 
-    // ── Admin Modal ──
     document.getElementById('closeAdminModal')?.addEventListener('click', closeAdminPanel);
     document.getElementById('closeAdminModalBtn')?.addEventListener('click', closeAdminPanel);
 
-    // ── Generate Key Modal ──
     document.getElementById('generateKeyBtn')?.addEventListener('click', showGenerateKeyModal);
     document.getElementById('cancelKeyBtn')?.addEventListener('click', closeGenerateKeyModal);
     document.getElementById('saveKeyBtn')?.addEventListener('click', saveNewKey);
 
-    // ── Add Firebase Modal ──
     document.getElementById('addFirebaseBtn')?.addEventListener('click', showAddFirebaseModal);
     document.getElementById('cancelFirebaseBtn')?.addEventListener('click', closeAddFirebaseModal);
-    document.getElementById('saveFirebaseBtn')?.addEventListener('click', saveFirebaseSource);
 
-    // ── Confirm Modal ──
     document.getElementById('confirmDeleteBtn')?.addEventListener('click', executeDelete);
     document.getElementById('cancelConfirmBtn')?.addEventListener('click', closeConfirmModal);
 
-    // ── Refresh ──
     document.getElementById('refreshBtn')?.addEventListener('click', function() {
         if (typeof refreshDashboard === 'function') {
             refreshDashboard();
         }
     });
 
-    // ── Back to Dashboard ──
     document.getElementById('detailBackBtn')?.addEventListener('click', function() {
         if (typeof goBackToDashboard === 'function') {
             goBackToDashboard();
         }
     });
 
-    // ── Filters ──
     if (typeof setupFilters === 'function') {
         setupFilters();
     }
 
-    // ── Close modals on overlay click ──
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', function(e) {
             if (e.target === this) {
-                // Close the specific modal
                 if (this.id === 'adminModal') closeAdminPanel();
                 else if (this.id === 'generateKeyModal') closeGenerateKeyModal();
                 else if (this.id === 'addFirebaseModal') closeAddFirebaseModal();
                 else if (this.id === 'confirmModal') closeConfirmModal();
-                else if (this.id === 'loadingOverlay') {
-                    // Don't close loading overlay on click
-                }
             }
         });
     });
@@ -212,9 +167,6 @@ function setupEventListeners() {
 // LOGIN HANDLER
 // ────────────────────────────────────────────────
 
-/**
- * Handle login
- */
 async function handleLogin() {
     const input = document.getElementById('accessKeyInput');
     if (!input) return;
@@ -227,17 +179,14 @@ async function handleLogin() {
         return;
     }
 
-    // Attempt login
     const success = await loginWithKey(key);
     
     if (success) {
-        // Login successful
         input.value = '';
         showDashboard();
         hapticFeedback('light');
         showTelegramAlert('✅ Login successful! Welcome to SMS Dashboard.');
     } else {
-        // Login failed
         showLoginError('Invalid access key. Please try again.');
         input.value = '';
         input.focus();
@@ -249,12 +198,8 @@ async function handleLogin() {
 // KEYBOARD SHORTCUTS
 // ────────────────────────────────────────────────
 
-/**
- * Set up keyboard shortcuts
- */
 function setupKeyboardShortcuts() {
     document.addEventListener('keydown', function(e) {
-        // Escape key to close modals
         if (e.key === 'Escape') {
             if (!document.getElementById('adminModal')?.classList.contains('hidden')) {
                 closeAdminPanel();
@@ -276,21 +221,13 @@ function setupKeyboardShortcuts() {
 // ERROR HANDLING
 // ────────────────────────────────────────────────
 
-/**
- * Global error handler
- */
 window.onerror = function(message, source, lineno, colno, error) {
     console.error('Global error:', { message, source, lineno, colno, error });
-    
-    // Don't show errors to users in production, but log them
     if (error && error.message) {
         console.error('Error details:', error.message);
     }
 };
 
-/**
- * Handle unhandled promise rejections
- */
 window.onunhandledrejection = function(event) {
     console.error('Unhandled rejection:', event.reason);
 };
@@ -311,22 +248,14 @@ window.setupKeyboardShortcuts = setupKeyboardShortcuts;
 // START APP
 // ────────────────────────────────────────────────
 
-// Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
-    // Set up keyboard shortcuts
     setupKeyboardShortcuts();
-    
-    // Initialize the app
     initApp();
 });
 
-// Also handle if DOM is already loaded
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-        // Already handled above
-    });
+    document.addEventListener('DOMContentLoaded', function() {});
 } else {
-    // DOM is already loaded
     setupKeyboardShortcuts();
     initApp();
 }
