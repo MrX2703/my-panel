@@ -16,7 +16,7 @@ let currentUser = null;
  */
 async function loadAccessKeys() {
     try {
-        // Load from JSON file (works on GitHub Pages)
+        // Load from JSON file
         const response = await fetch('data/access-keys.json');
         if (response.ok) {
             const data = await response.json();
@@ -45,21 +45,9 @@ async function loadAccessKeys() {
         console.error('Error loading access keys from localStorage:', e);
     }
     
-    // If nothing found, return default with demo key
-    console.log('⚠️ No access keys found, using default demo key');
-    const defaultKeys = {
-        keys: [{
-            id: 'key_demo_001',
-            key: 'DEMO-ABCD-1234-EFGH',
-            createdAt: new Date().toISOString(),
-            expiresAt: '2027-12-31T23:59:00.000Z',
-            status: 'active',
-            usedCount: 0,
-            lastUsed: null
-        }]
-    };
-    localStorage.setItem(STORAGE_KEYS.ACCESS_KEYS, JSON.stringify(defaultKeys));
-    return defaultKeys;
+    // Return empty if nothing found
+    console.log('⚠️ No access keys found');
+    return DEFAULT_ACCESS_KEYS;
 }
 
 /**
@@ -92,6 +80,7 @@ async function validateAccessKey(key) {
         return { valid: false, message: 'Access key has expired' };
     }
 
+    // Key is valid - update usage
     foundKey.usedCount = (foundKey.usedCount || 0) + 1;
     foundKey.lastUsed = getCurrentISO();
     saveAccessKeys(keysData);
@@ -230,17 +219,29 @@ function getCurrentUser() {
 // ────────────────────────────────────────────────
 
 /**
- * Load admin IDs from localStorage
+ * Load admin IDs from JSON file
  */
-function loadAdminIds() {
+async function loadAdminIds() {
+    try {
+        const response = await fetch('data/admin-config.json');
+        if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem(STORAGE_KEYS.ADMIN_IDS, JSON.stringify(data));
+            return data;
+        }
+    } catch (e) {
+        console.log('Could not load admin-config.json, checking localStorage...');
+    }
+    
     try {
         const data = localStorage.getItem(STORAGE_KEYS.ADMIN_IDS);
         if (data) {
             return JSON.parse(data);
         }
     } catch (e) {
-        console.error('Error loading admin IDs:', e);
+        console.error('Error loading admin IDs from localStorage:', e);
     }
+    
     return DEFAULT_ADMIN_IDS;
 }
 
@@ -257,24 +258,15 @@ function saveAdminIds(adminIds) {
 
 /**
  * Check if current user is admin
- * ============================================
- * FOR TESTING: Always returns true
- * Remove this after deployment!
- * ============================================
  */
-function isAdmin() {
-    // ============================================
-    // FOR TESTING: Always return true
-    // This will show the Admin icon in browser
-    // ============================================
-    return true;
-    // ============================================
+async function isAdmin() {
+    // Get user ID from Telegram
+    const userId = getTelegramUserId();
+    if (!userId) return false;
     
-    // Original code - uncomment for production
-    // const userId = getTelegramUserId();
-    // if (!userId) return false;
-    // const adminData = loadAdminIds();
-    // return adminData.adminIds.includes(userId);
+    // Load admin IDs from config
+    const adminData = await loadAdminIds();
+    return adminData.adminIds.includes(userId);
 }
 
 /**
@@ -334,10 +326,10 @@ function clearLoginError() {
 /**
  * Show/hide admin button based on user role
  */
-function updateAdminButtonVisibility() {
+async function updateAdminButtonVisibility() {
     const adminBtn = document.getElementById('adminLoginBtn');
     const adminPanelBtn = document.getElementById('adminPanelBtn');
-    const isUserAdmin = isAdmin();
+    const isUserAdmin = await isAdmin();
 
     if (adminBtn) {
         if (isUserAdmin && !isLoggedIn) {
