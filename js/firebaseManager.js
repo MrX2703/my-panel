@@ -14,56 +14,56 @@ let isInitialized = false;
 let firebaseConfigsCache = null;
 
 // ────────────────────────────────────────────────
-// CONFIG LOADING
+// CONFIG LOADING - DIRECTLY FROM JSON FILE
 // ────────────────────────────────────────────────
 
 /**
- * Load Firebase configs from localStorage (called by app.js)
+ * Load Firebase configs directly from JSON file
  */
-function loadFirebaseConfigsFromStorage() {
+async function loadFirebaseConfigsFromFile() {
+    console.log('📢 Loading Firebase configs from JSON file...');
+    try {
+        const response = await fetch('data/firebase-configs.json');
+        if (response.ok) {
+            const data = await response.json();
+            firebaseConfigsCache = data;
+            // Save to localStorage for backup
+            localStorage.setItem('firebase_configs', JSON.stringify(data));
+            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
+            return data;
+        } else {
+            console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
+        }
+    } catch (e) {
+        console.log('⚠️ Error loading firebase-configs.json:', e.message);
+    }
+    
+    // Fallback: try localStorage
     try {
         const data = localStorage.getItem('firebase_configs');
         if (data) {
             const parsed = JSON.parse(data);
             if (parsed.sources && parsed.sources.length > 0) {
                 firebaseConfigsCache = parsed;
-                console.log('📢 Firebase configs loaded from storage:', parsed.sources.length);
+                console.log('📢 Firebase configs loaded from localStorage fallback');
                 return parsed;
             }
         }
     } catch (e) {
-        console.error('Error loading Firebase configs from storage:', e);
+        console.error('Error loading from localStorage:', e);
     }
+    
+    console.log('📢 No Firebase configs found');
     return { sources: [] };
 }
 
 /**
- * Load Firebase configs from JSON file
+ * Get Firebase configs (synchronous)
  */
-function loadFirebaseConfigs() {
-    console.log('📢 Loading Firebase configs...');
-    try {
-        // Try to get from memory cache first
-        if (firebaseConfigsCache && firebaseConfigsCache.sources && firebaseConfigsCache.sources.length > 0) {
-            console.log('📢 Using cached Firebase configs:', firebaseConfigsCache.sources.length);
-            return firebaseConfigsCache;
-        }
-        
-        // Try localStorage
-        const data = localStorage.getItem('firebase_configs');
-        if (data) {
-            const parsed = JSON.parse(data);
-            if (parsed.sources && parsed.sources.length > 0) {
-                console.log('📢 Firebase configs loaded from localStorage:', parsed.sources.length);
-                firebaseConfigsCache = parsed;
-                return parsed;
-            }
-        }
-    } catch (e) {
-        console.error('Error loading Firebase configs:', e);
+function getFirebaseConfigs() {
+    if (firebaseConfigsCache && firebaseConfigsCache.sources && firebaseConfigsCache.sources.length > 0) {
+        return firebaseConfigsCache;
     }
-    
-    console.log('📢 No Firebase configs found');
     return { sources: [] };
 }
 
@@ -84,7 +84,7 @@ function saveFirebaseConfigsToLocal(configs) {
  * Add a new Firebase source
  */
 function addFirebaseSource(url, key) {
-    const configs = loadFirebaseConfigs();
+    const configs = firebaseConfigsCache || { sources: [] };
     const newSource = {
         id: generateId(),
         url: url,
@@ -101,7 +101,7 @@ function addFirebaseSource(url, key) {
  * Remove a Firebase source
  */
 function removeFirebaseSource(sourceId) {
-    const configs = loadFirebaseConfigs();
+    const configs = firebaseConfigsCache || { sources: [] };
     configs.sources = configs.sources.filter(s => s.id !== sourceId);
     saveFirebaseConfigsToLocal(configs);
     disconnectFromFirebase(sourceId);
@@ -117,10 +117,8 @@ function removeFirebaseSource(sourceId) {
  */
 async function initFirebaseConnections() {
     try {
-        // First load from localStorage (set by app.js)
-        loadFirebaseConfigsFromStorage();
-        
-        const configs = loadFirebaseConfigs();
+        // Load configs directly from JSON file
+        const configs = await loadFirebaseConfigsFromFile();
         console.log('📢 Firebase configs loaded:', configs);
         
         if (!configs || !configs.sources || configs.sources.length === 0) {
@@ -533,8 +531,8 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 // EXPOSE TO GLOBAL SCOPE
 // ────────────────────────────────────────────────
 
-window.loadFirebaseConfigs = loadFirebaseConfigs;
-window.loadFirebaseConfigsFromStorage = loadFirebaseConfigsFromStorage;
+window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile;
+window.getFirebaseConfigs = getFirebaseConfigs;
 window.saveFirebaseConfigsToLocal = saveFirebaseConfigsToLocal;
 window.addFirebaseSource = addFirebaseSource;
 window.removeFirebaseSource = removeFirebaseSource;
