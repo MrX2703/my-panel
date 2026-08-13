@@ -3,10 +3,6 @@
  * Handles login, access key management, and session management
  */
 
-// ────────────────────────────────────────────────
-// STATE
-// ────────────────────────────────────────────────
-
 let currentAccessKey = null;
 let isLoggedIn = false;
 let currentUser = null;
@@ -16,34 +12,54 @@ let currentUser = null;
 // ────────────────────────────────────────────────
 
 /**
- * Load access keys from JSON file or localStorage
+ * Load access keys from JSON file
  */
 async function loadAccessKeys() {
     try {
-        // First, try to load from JSON file
+        // Load from JSON file (works on GitHub Pages)
         const response = await fetch('data/access-keys.json');
         if (response.ok) {
             const data = await response.json();
             // Save to localStorage for faster access
             localStorage.setItem(STORAGE_KEYS.ACCESS_KEYS, JSON.stringify(data));
+            console.log('✅ Access keys loaded from JSON file');
             return data;
+        } else {
+            console.log('⚠️ Could not load access-keys.json, checking localStorage...');
         }
     } catch (e) {
-        console.log('Could not load access-keys.json, checking localStorage...');
+        console.log('❌ Error loading access-keys.json:', e.message);
     }
     
     // Fallback: try localStorage
     try {
         const data = localStorage.getItem(STORAGE_KEYS.ACCESS_KEYS);
         if (data) {
-            return JSON.parse(data);
+            const parsed = JSON.parse(data);
+            if (parsed.keys && parsed.keys.length > 0) {
+                console.log('✅ Access keys loaded from localStorage');
+                return parsed;
+            }
         }
     } catch (e) {
         console.error('Error loading access keys from localStorage:', e);
     }
     
-    // If nothing found, return default empty
-    return DEFAULT_ACCESS_KEYS;
+    // If nothing found, return default with demo key
+    console.log('⚠️ No access keys found, using default demo key');
+    const defaultKeys = {
+        keys: [{
+            id: 'key_demo_001',
+            key: 'DEMO-ABCD-1234-EFGH',
+            createdAt: new Date().toISOString(),
+            expiresAt: '2027-12-31T23:59:00.000Z',
+            status: 'active',
+            usedCount: 0,
+            lastUsed: null
+        }]
+    };
+    localStorage.setItem(STORAGE_KEYS.ACCESS_KEYS, JSON.stringify(defaultKeys));
+    return defaultKeys;
 }
 
 /**
@@ -72,12 +88,10 @@ async function validateAccessKey(key) {
         return { valid: false, message: 'Invalid access key' };
     }
 
-    // Check if key is expired
     if (isKeyExpired(foundKey.expiresAt)) {
         return { valid: false, message: 'Access key has expired' };
     }
 
-    // Key is valid - update usage
     foundKey.usedCount = (foundKey.usedCount || 0) + 1;
     foundKey.lastUsed = getCurrentISO();
     saveAccessKeys(keysData);
@@ -89,12 +103,10 @@ async function validateAccessKey(key) {
  * Generate a new access key (admin only)
  */
 function generateAccessKey(key, expiresAt) {
-    // Validate key format
     if (!isValidKeyFormat(key)) {
         throw new Error('Invalid key format. Use format: XXXX-XXXX-XXXX-XXXX');
     }
 
-    // Check if key already exists
     const keysData = loadAccessKeys();
     const existing = keysData.keys.find(k => k.key === key);
     if (existing) {
@@ -136,14 +148,6 @@ function getDefaultExpiry() {
 }
 
 /**
- * Check if a key exists
- */
-function keyExists(key) {
-    const keysData = loadAccessKeys();
-    return keysData.keys.some(k => k.key === key.trim());
-}
-
-/**
  * Get all access keys
  */
 function getAllAccessKeys() {
@@ -168,7 +172,6 @@ async function loginWithKey(key) {
             keyData: result.keyData,
             loginTime: getCurrentISO()
         };
-        // Store session
         localStorage.setItem(STORAGE_KEYS.SESSION_KEY, key);
         localStorage.setItem(STORAGE_KEYS.SESSION_EXPIRY, getCurrentISO());
         return true;
@@ -184,7 +187,6 @@ async function isUserLoggedIn() {
         return true;
     }
 
-    // Check session
     const sessionKey = localStorage.getItem(STORAGE_KEYS.SESSION_KEY);
     if (sessionKey) {
         const result = await validateAccessKey(sessionKey);
@@ -198,7 +200,6 @@ async function isUserLoggedIn() {
             };
             return true;
         } else {
-            // Session expired or invalid
             logout();
         }
     }
@@ -354,7 +355,6 @@ window.validateAccessKey = validateAccessKey;
 window.generateAccessKey = generateAccessKey;
 window.deleteAccessKey = deleteAccessKey;
 window.getDefaultExpiry = getDefaultExpiry;
-window.keyExists = keyExists;
 window.getAllAccessKeys = getAllAccessKeys;
 window.loginWithKey = loginWithKey;
 window.isUserLoggedIn = isUserLoggedIn;
