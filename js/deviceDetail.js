@@ -207,4 +207,142 @@ function renderSmsMessages(messages) {
         feed.innerHTML = `
             <div class="sms-empty">
                 📭 No messages found<br>
-                <span style="font-size:12px;">Messages will appear here when received</
+                <span style="font-size:12px;">Messages will appear here when received</span>
+            </div>
+        `;
+        return;
+    }
+
+    const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
+
+    feed.innerHTML = displayMessages.map((msg, index) => `
+        <div class="sms-item ${index === 0 ? 'new' : ''}">
+            <div class="sms-header">
+                <span class="sms-sender">📨 ${msg.sender}</span>
+                <span class="sms-time">${timeAgo(msg.time)}</span>
+            </div>
+            <div class="sms-body">${msg.body}</div>
+        </div>
+    `).join('');
+
+    feed.scrollTop = 0;
+}
+
+// ────────────────────────────────────────────────
+// SEND TAB - UPDATED FOR YOUR DATA
+// ────────────────────────────────────────────────
+
+function setupSendSms(device) {
+    const sendBtn = document.getElementById('sendSmsBtn');
+    const messageInput = document.getElementById('sendMessage');
+    const charCount = document.getElementById('charCount');
+
+    if (!sendBtn || !messageInput) return;
+
+    messageInput.addEventListener('input', function() {
+        const count = this.value.length;
+        if (charCount) {
+            charCount.textContent = count;
+        }
+    });
+
+    sendBtn.addEventListener('click', function() {
+        sendSmsMessage(device);
+    });
+
+    messageInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendSmsMessage(device);
+        }
+    });
+}
+
+async function sendSmsMessage(device) {
+    const simSelector = document.getElementById('sendSimSelector');
+    const toInput = document.getElementById('sendToNumber');
+    const messageInput = document.getElementById('sendMessage');
+
+    const selectedSim = simSelector ? simSelector.value : (device.sims ? device.sims[0] : null);
+    const toNumber = toInput ? toInput.value.trim() : '';
+    const message = messageInput ? messageInput.value.trim() : '';
+
+    if (!toNumber) {
+        showTelegramAlert('Please enter a receiver number');
+        return;
+    }
+
+    if (!message) {
+        showTelegramAlert('Please enter a message');
+        return;
+    }
+
+    if (message.length > 160) {
+        showTelegramAlert('Message exceeds 160 characters');
+        return;
+    }
+
+    showTelegramConfirm(`Send SMS to ${toNumber}?\n\nFrom: ${selectedSim}\nMessage: ${message}`, async (confirmed) => {
+        if (!confirmed) return;
+
+        showLoading('Sending SMS...');
+
+        try {
+            const result = await sendSms(
+                device.id,
+                currentSourceId,
+                selectedSim,
+                toNumber,
+                message
+            );
+
+            if (result.success) {
+                if (toInput) toInput.value = '';
+                if (messageInput) messageInput.value = '';
+                if (document.getElementById('charCount')) {
+                    document.getElementById('charCount').textContent = '0';
+                }
+
+                showTelegramAlert('✅ SMS sent successfully!');
+                hapticFeedback('light');
+                switchTab('sms');
+            }
+        } catch (error) {
+            console.error('Error sending SMS:', error);
+            showTelegramAlert(`❌ Failed to send SMS: ${error.message || 'Unknown error'}`);
+        } finally {
+            hideLoading();
+        }
+    });
+}
+
+function goBackToDashboard() {
+    if (smsUnsubscribe) {
+        smsUnsubscribe();
+        smsUnsubscribe = null;
+    }
+
+    document.getElementById('deviceDetailView').classList.remove('active');
+    document.getElementById('deviceDetailView').classList.add('hidden');
+    document.getElementById('dashboardView').classList.remove('hidden');
+
+    currentDevice = null;
+    currentSourceId = null;
+    currentSim = null;
+}
+
+// ────────────────────────────────────────────────
+// EXPOSE TO GLOBAL SCOPE
+// ────────────────────────────────────────────────
+
+window.initDeviceDetail = initDeviceDetail;
+window.updateDetailHeader = updateDetailHeader;
+window.populateSimSelectors = populateSimSelectors;
+window.setupDetailTabs = setupDetailTabs;
+window.switchTab = switchTab;
+window.loadInfoTab = loadInfoTab;
+window.loadSmsTab = loadSmsTab;
+window.renderSmsMessages = renderSmsMessages;
+window.setupSendSms = setupSendSms;
+window.sendSmsMessage = sendSmsMessage;
+window.goBackToDashboard = goBackToDashboard;
