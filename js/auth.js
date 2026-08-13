@@ -257,13 +257,24 @@ function saveAdminIds(adminIds) {
 
 /**
  * Check if current user is admin
+ * ============================================
+ * FOR TESTING: Always returns true
+ * Remove this after deployment!
+ * ============================================
  */
 function isAdmin() {
-    const userId = getTelegramUserId();
-    if (!userId) return false;
-
-    const adminData = loadAdminIds();
-    return adminData.adminIds.includes(userId);
+    // ============================================
+    // FOR TESTING: Always return true
+    // This will show the Admin icon in browser
+    // ============================================
+    return true;
+    // ============================================
+    
+    // Original code - uncomment for production
+    // const userId = getTelegramUserId();
+    // if (!userId) return false;
+    // const adminData = loadAdminIds();
+    // return adminData.adminIds.includes(userId);
 }
 
 /**
