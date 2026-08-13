@@ -32,6 +32,11 @@ body {
     border-radius: 16px;
     padding: 16px;
     margin-bottom: 8px;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+}
+.card:hover {
+    border-color: var(--tg-theme-button-color, #0088cc);
 }
 
 /* ──────────────── Buttons ──────────────── */
@@ -54,6 +59,8 @@ body {
 }
 .btn-primary:hover {
     opacity: 0.9;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 136, 204, 0.3);
 }
 .btn-danger {
     background: #ff3b30;
@@ -107,13 +114,14 @@ body {
     color: var(--tg-theme-text-color, #000000);
     font-size: 14px;
     font-family: inherit;
-    transition: border-color 0.2s ease;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .input-group input:focus,
 .input-group textarea:focus,
 .input-group select:focus {
     outline: none;
     border-color: var(--tg-theme-button-color, #0088cc);
+    box-shadow: 0 0 0 3px rgba(0, 136, 204, 0.1);
 }
 .input-group textarea {
     resize: vertical;
@@ -176,6 +184,9 @@ body {
 .dashboard-title {
     font-size: 24px;
     font-weight: 700;
+    background: linear-gradient(135deg, var(--tg-theme-text-color, #000) 0%, var(--tg-theme-button-color, #0088cc) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 .header-actions {
     display: flex;
@@ -195,6 +206,10 @@ body {
 .header-btn:active {
     transform: scale(0.92);
 }
+.header-btn:hover {
+    background: var(--tg-theme-button-color, #0088cc);
+    color: #fff;
+}
 
 /* ──────────────── Stats ──────────────── */
 .stats-grid {
@@ -208,6 +223,15 @@ body {
     border-radius: 16px;
     padding: 14px 12px;
     text-align: center;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.stat-card:active {
+    transform: scale(0.96);
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 .stat-number {
     font-size: 28px;
@@ -253,6 +277,7 @@ body {
 .filter-tab.active {
     background: var(--tg-theme-button-color, #0088cc);
     color: var(--tg-theme-button-text-color, #ffffff);
+    box-shadow: 0 2px 8px rgba(0, 136, 204, 0.3);
 }
 .filter-tab:hover:not(.active) {
     background: rgba(0, 136, 204, 0.1);
@@ -269,10 +294,15 @@ body {
     border-radius: 16px;
     padding: 16px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
 }
 .device-card:active {
     transform: scale(0.98);
+}
+.device-card:hover {
+    border-color: var(--tg-theme-button-color, #0088cc);
+    transform: translateX(4px);
 }
 .device-header {
     display: flex;
@@ -357,6 +387,15 @@ body {
     color: var(--tg-theme-button-color, #0088cc);
     font-weight: 500;
 }
+.device-source {
+    font-size: 11px;
+    color: var(--tg-theme-hint-color, #999999);
+    margin-top: 4px;
+    padding: 2px 8px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+    display: inline-block;
+}
 
 /* ──────────────── Device Detail ──────────────── */
 .device-detail {
@@ -389,16 +428,20 @@ body {
     padding: 8px 0;
     margin-bottom: 12px;
     font-family: inherit;
+    transition: color 0.2s ease;
 }
 .detail-back:active {
     opacity: 0.6;
+}
+.detail-back:hover {
+    color: var(--tg-theme-button-color, #0088cc);
 }
 
 .detail-tabs {
     display: flex;
     gap: 4px;
     margin-bottom: 16px;
-    border-bottom: 1px solid var(--tg-theme-separator-color, #e0e0e0);
+    border-bottom: 2px solid var(--tg-theme-separator-color, #e0e0e0);
 }
 .detail-tab {
     padding: 10px 16px;
@@ -411,6 +454,7 @@ body {
     border-bottom: 2px solid transparent;
     transition: all 0.3s ease;
     font-family: inherit;
+    margin-bottom: -2px;
 }
 .detail-tab.active {
     color: var(--tg-theme-button-color, #0088cc);
@@ -467,6 +511,7 @@ body {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    padding-right: 4px;
 }
 .sms-feed::-webkit-scrollbar {
     width: 4px;
@@ -486,6 +531,10 @@ body {
     padding: 10px 12px;
     animation: slideIn 0.3s ease;
     border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+.sms-item:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 .sms-item.new {
     border-left-color: #34c759;
@@ -539,6 +588,11 @@ body {
     margin-bottom: 6px;
     border: 1px solid var(--tg-theme-separator-color, #e0e0e0);
     font-size: 14px;
+    transition: all 0.2s ease;
+}
+.firebase-item:hover,
+.key-item:hover {
+    border-color: var(--tg-theme-button-color, #0088cc);
 }
 .firebase-item-info,
 .key-item-info {
@@ -613,6 +667,7 @@ body {
     max-height: 90vh;
     overflow-y: auto;
     animation: slideIn 0.25s ease;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
 }
 .modal-header {
     display: flex;
@@ -631,6 +686,7 @@ body {
     color: var(--tg-theme-hint-color, #999999);
     cursor: pointer;
     padding: 0 4px;
+    transition: color 0.2s ease;
 }
 .modal-close:hover {
     color: var(--tg-theme-text-color, #000000);
@@ -696,6 +752,9 @@ body {
         margin-left: 0;
         width: 100%;
         justify-content: flex-end;
+    }
+    .device-card:hover {
+        transform: none;
     }
 }
 
