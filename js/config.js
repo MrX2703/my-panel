@@ -44,17 +44,72 @@ const DEFAULT_ADMIN_IDS = {
 };
 
 // ────────────────────────────────────────────────
-// HELPER FUNCTIONS
+// DATE PARSING HELPERS
 // ────────────────────────────────────────────────
+
+/**
+ * Parse various date formats
+ */
+function parseDate(input) {
+    if (!input) return null;
+    
+    // If it's already a Date object
+    if (input instanceof Date) return input;
+    
+    // If it's a number (timestamp)
+    if (typeof input === 'number') {
+        const date = new Date(input);
+        if (!isNaN(date.getTime())) return date;
+    }
+    
+    // If it's a string
+    if (typeof input === 'string') {
+        // Try format: "06-08-2026 | 10:19 pm"
+        const match = input.match(/(\d{2})-(\d{2})-(\d{4}) \| (\d{1,2}):(\d{2}) (am|pm)/i);
+        if (match) {
+            let hours = parseInt(match[4]);
+            const minutes = parseInt(match[5]);
+            const ampm = match[6].toLowerCase();
+            const day = parseInt(match[1]);
+            const month = parseInt(match[2]) - 1;
+            const year = parseInt(match[3]);
+            
+            if (ampm === 'pm' && hours < 12) hours += 12;
+            if (ampm === 'am' && hours === 12) hours = 0;
+            
+            const date = new Date(year, month, day, hours, minutes);
+            if (!isNaN(date.getTime())) return date;
+        }
+        
+        // Try format: "06-08-2026 | 10:19" (without am/pm)
+        const match2 = input.match(/(\d{2})-(\d{2})-(\d{4}) \| (\d{1,2}):(\d{2})/);
+        if (match2) {
+            const hours = parseInt(match2[4]);
+            const minutes = parseInt(match2[5]);
+            const day = parseInt(match2[1]);
+            const month = parseInt(match2[2]) - 1;
+            const year = parseInt(match2[3]);
+            
+            const date = new Date(year, month, day, hours, minutes);
+            if (!isNaN(date.getTime())) return date;
+        }
+        
+        // Try standard ISO format
+        const date = new Date(input);
+        if (!isNaN(date.getTime())) return date;
+    }
+    
+    return null;
+}
 
 function getCurrentISO() {
     return new Date().toISOString();
 }
 
-function formatDate(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'N/A';
+function formatDate(dateInput) {
+    if (!dateInput) return 'N/A';
+    const date = parseDate(dateInput);
+    if (!date) return 'N/A';
     return date.toLocaleString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -65,10 +120,11 @@ function formatDate(dateString) {
     });
 }
 
-function timeAgo(dateString) {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) return 'N/A';
+function timeAgo(dateInput) {
+    if (!dateInput) return 'N/A';
+    const date = parseDate(dateInput);
+    if (!date) return 'N/A';
+    
     const now = new Date();
     const diffMs = now - date;
     const diffSec = Math.floor(diffMs / 1000);
@@ -80,17 +136,15 @@ function timeAgo(dateString) {
     if (diffMin < 60) return `${diffMin}m ago`;
     if (diffHour < 24) return `${diffHour}h ago`;
     if (diffDay < 7) return `${diffDay}d ago`;
-    return formatDate(dateString);
+    return formatDate(date.toISOString());
 }
 
 function timestampToISO(timestamp) {
     if (!timestamp) return new Date().toISOString();
-    // Check if it's already a string (ISO format)
     if (typeof timestamp === 'string' && timestamp.includes('-')) {
         const date = new Date(timestamp);
         if (!isNaN(date.getTime())) return timestamp;
     }
-    // Convert number to date
     const date = new Date(timestamp);
     if (isNaN(date.getTime())) return new Date().toISOString();
     return date.toISOString();
@@ -243,6 +297,7 @@ window.DEFAULT_FIREBASE_CONFIGS = DEFAULT_FIREBASE_CONFIGS;
 window.DEFAULT_ADMIN_IDS = DEFAULT_ADMIN_IDS;
 
 window.getCurrentISO = getCurrentISO;
+window.parseDate = parseDate;
 window.formatDate = formatDate;
 window.timeAgo = timeAgo;
 window.timestampToISO = timestampToISO;
