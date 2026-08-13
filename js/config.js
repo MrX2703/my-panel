@@ -10,9 +10,9 @@
 const APP_CONFIG = {
     name: 'SMS Dashboard',
     version: '1.0.0',
-    maxSmsDisplay: 100, // Maximum SMS messages to show
-    keyFormat: 'XXXX-XXXX-XXXX-XXXX', // Key format pattern
-    defaultExpiryDays: 30, // Default expiry if not set
+    maxSmsDisplay: 100,
+    keyFormat: 'XXXX-XXXX-XXXX-XXXX',
+    defaultExpiryDays: 30,
 };
 
 // ────────────────────────────────────────────────
@@ -47,19 +47,14 @@ const DEFAULT_ADMIN_IDS = {
 // HELPER FUNCTIONS
 // ────────────────────────────────────────────────
 
-/**
- * Get current date/time in ISO format
- */
 function getCurrentISO() {
     return new Date().toISOString();
 }
 
-/**
- * Format date for display
- */
 function formatDate(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
     return date.toLocaleString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -70,12 +65,10 @@ function formatDate(dateString) {
     });
 }
 
-/**
- * Format time ago (e.g., "2 minutes ago")
- */
 function timeAgo(dateString) {
     if (!dateString) return 'N/A';
     const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'N/A';
     const now = new Date();
     const diffMs = now - date;
     const diffSec = Math.floor(diffMs / 1000);
@@ -90,24 +83,49 @@ function timeAgo(dateString) {
     return formatDate(dateString);
 }
 
-/**
- * Generate a random ID
- */
+function timestampToISO(timestamp) {
+    if (!timestamp) return new Date().toISOString();
+    // Check if it's already a string (ISO format)
+    if (typeof timestamp === 'string' && timestamp.includes('-')) {
+        const date = new Date(timestamp);
+        if (!isNaN(date.getTime())) return timestamp;
+    }
+    // Convert number to date
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return new Date().toISOString();
+    return date.toISOString();
+}
+
+function formatTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'N/A';
+    return date.toLocaleString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+    });
+}
+
+function timeAgoFromTimestamp(timestamp) {
+    if (!timestamp) return 'N/A';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return 'N/A';
+    return timeAgo(date.toISOString());
+}
+
 function generateId() {
     return 'id_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6);
 }
 
-/**
- * Validate access key format (XXXX-XXXX-XXXX-XXXX)
- */
 function isValidKeyFormat(key) {
     const pattern = /^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/;
     return pattern.test(key);
 }
 
-/**
- * Check if a key is expired
- */
 function isKeyExpired(expiresAt) {
     if (!expiresAt) return false;
     const now = new Date();
@@ -115,25 +133,16 @@ function isKeyExpired(expiresAt) {
     return now > expiry;
 }
 
-/**
- * Check if a key is active (not expired)
- */
 function isKeyActive(expiresAt) {
     return !isKeyExpired(expiresAt);
 }
 
-/**
- * Truncate text with ellipsis
- */
 function truncateText(text, maxLength = 50) {
     if (!text) return '';
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
 }
 
-/**
- * Safe JSON parse with fallback
- */
 function safeJsonParse(jsonString, fallback = null) {
     try {
         return JSON.parse(jsonString);
@@ -142,9 +151,6 @@ function safeJsonParse(jsonString, fallback = null) {
     }
 }
 
-/**
- * Get Telegram User ID from WebApp
- */
 function getTelegramUserId() {
     try {
         const tg = window.Telegram?.WebApp;
@@ -157,9 +163,6 @@ function getTelegramUserId() {
     }
 }
 
-/**
- * Get Telegram User Name from WebApp
- */
 function getTelegramUserName() {
     try {
         const tg = window.Telegram?.WebApp;
@@ -173,9 +176,6 @@ function getTelegramUserName() {
     }
 }
 
-/**
- * Show haptic feedback (if available)
- */
 function hapticFeedback(style = 'light') {
     try {
         const tg = window.Telegram?.WebApp;
@@ -187,9 +187,6 @@ function hapticFeedback(style = 'light') {
     }
 }
 
-/**
- * Show Telegram popup
- */
 function showTelegramPopup(title, message, buttons = [{ type: 'ok' }]) {
     try {
         const tg = window.Telegram?.WebApp;
@@ -203,16 +200,10 @@ function showTelegramPopup(title, message, buttons = [{ type: 'ok' }]) {
     }
 }
 
-/**
- * Show Telegram alert (simple)
- */
 function showTelegramAlert(message) {
     showTelegramPopup('', message);
 }
 
-/**
- * Show confirmation dialog
- */
 function showTelegramConfirm(message, callback) {
     try {
         const tg = window.Telegram?.WebApp;
@@ -251,10 +242,12 @@ window.DEFAULT_ACCESS_KEYS = DEFAULT_ACCESS_KEYS;
 window.DEFAULT_FIREBASE_CONFIGS = DEFAULT_FIREBASE_CONFIGS;
 window.DEFAULT_ADMIN_IDS = DEFAULT_ADMIN_IDS;
 
-// Helper functions
 window.getCurrentISO = getCurrentISO;
 window.formatDate = formatDate;
 window.timeAgo = timeAgo;
+window.timestampToISO = timestampToISO;
+window.formatTimestamp = formatTimestamp;
+window.timeAgoFromTimestamp = timeAgoFromTimestamp;
 window.generateId = generateId;
 window.isValidKeyFormat = isValidKeyFormat;
 window.isKeyExpired = isKeyExpired;
