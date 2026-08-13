@@ -1,6 +1,6 @@
 /**
- * FIREBASE MANAGER
- * Handles multiple Firebase connections using Realtime Database
+ * FIREBASE MANAGER - Realtime Database Version
+ * Reads from Realtime Database (not Firestore)
  */
 
 // ────────────────────────────────────────────────
@@ -52,11 +52,6 @@ async function loadFirebaseConfigs() {
     return { sources: [] };
 }
 
-async function getAllFirebaseSources() {
-    const configs = await loadFirebaseConfigs();
-    return configs.sources || [];
-}
-
 // ────────────────────────────────────────────────
 // INITIALIZATION - Realtime Database
 // ────────────────────────────────────────────────
@@ -105,35 +100,28 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        // For Realtime Database, we use the REST API
-        // Store the connection info
-        firebaseInstances[id] = {
-            config: source,
-            connected: true,
-            url: url,
-            key: key
-        };
-
-        // Test connection by fetching users
-        const testUrl = `${url}/users.json?auth=${key}&limitToFirst=1`;
+        // Test connection using REST API
+        const testUrl = `${url}/users.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
         if (response.ok) {
             const data = await response.json();
-            console.log(`📢 Test query returned ${data ? Object.keys(data).length : 0} users`);
+            const count = data ? Object.keys(data).length : 0;
+            console.log(`📢 Test query returned ${count} users in Realtime Database`);
+            
+            firebaseInstances[id] = {
+                config: source,
+                connected: true,
+                url: url,
+                key: key
+            };
             return true;
         } else {
             console.error(`❌ Test failed: ${response.status}`);
-            firebaseInstances[id].connected = false;
             return false;
         }
     } catch (error) {
         console.error(`❌ Failed to connect to Firebase ${source.id}:`, error);
-        firebaseInstances[source.id] = {
-            config: source,
-            connected: false,
-            error: error.message
-        };
         return false;
     }
 }
@@ -141,10 +129,6 @@ async function connectToFirebase(source) {
 function disconnectFromFirebase(sourceId) {
     try {
         if (firebaseInstances[sourceId]) {
-            if (deviceListeners[sourceId]) {
-                deviceListeners[sourceId].forEach(unsubscribe => unsubscribe());
-                delete deviceListeners[sourceId];
-            }
             delete firebaseInstances[sourceId];
             console.log(`📢 Disconnected from Firebase: ${sourceId}`);
         }
@@ -195,7 +179,7 @@ async function fetchDevicesFromSource(sourceId) {
         
         // Fetch users from Realtime Database
         const apiUrl = `${url}/users.json?auth=${key}`;
-        console.log(`📢 Fetching from: ${apiUrl}`);
+        console.log(`📢 Fetching from Realtime Database: users`);
         
         const response = await fetch(apiUrl);
         
@@ -248,39 +232,19 @@ async function fetchDevicesFromSource(sourceId) {
 }
 
 function listenToDevices(callback) {
-    Object.keys(deviceListeners).forEach(sourceId => {
-        deviceListeners[sourceId].forEach(unsubscribe => unsubscribe());
-    });
-    deviceListeners = {};
-
-    const sources = Object.keys(firebaseInstances);
-    console.log(`📢 Setting up listeners for ${sources.length} sources...`);
-
-    for (const sourceId of sources) {
-        const instance = firebaseInstances[sourceId];
-        if (!instance.connected) continue;
-
-        console.log(`📢 Setting up listener for ${sourceId}...`);
-        
-        // For Realtime Database, we poll every 5 seconds
-        // (Firebase RTDB doesn't have onSnapshot like Firestore)
-        const intervalId = setInterval(async () => {
-            try {
-                const devices = await fetchDevicesFromSource(sourceId);
-                // Update allDevices with this source's data
-                const otherDevices = allDevices.filter(d => d.sourceId !== sourceId);
-                allDevices = [...otherDevices, ...devices];
-                if (callback) callback(allDevices);
-            } catch (error) {
-                console.error(`❌ Error polling devices from ${sourceId}:`, error);
-            }
-        }, 5000);
-
-        if (!deviceListeners[sourceId]) {
-            deviceListeners[sourceId] = [];
+    // Simple polling for Realtime Database
+    // Refresh every 5 seconds
+    const intervalId = setInterval(async () => {
+        try {
+            await fetchAllDevices();
+            if (callback) callback(allDevices);
+        } catch (error) {
+            console.error('❌ Error polling devices:', error);
         }
-        deviceListeners[sourceId].push(() => clearInterval(intervalId));
-    }
+    }, 5000);
+
+    // Store interval for cleanup
+    window._devicePollInterval = intervalId;
 }
 
 // ────────────────────────────────────────────────
@@ -331,14 +295,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 }
 
 function listenToSms(deviceId, sourceId, simNumber, callback) {
-    const instance = firebaseInstances[sourceId];
-    if (!instance || !instance.connected) {
-        console.error('❌ Firebase not connected');
-        return null;
-    }
-
-    console.log(`📢 Setting up SMS listener for device: ${deviceId}, SIM: ${simNumber}`);
-
     // Poll every 3 seconds for SMS updates
     const intervalId = setInterval(async () => {
         try {
@@ -412,7 +368,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 // ────────────────────────────────────────────────
 
 window.loadFirebaseConfigs = loadFirebaseConfigs;
-window.getAllFirebaseSources = getAllFirebaseSources;
 window.initFirebaseConnections = initFirebaseConnections;
 window.connectToFirebase = connectToFirebase;
 window.disconnectFromFirebase = disconnectFromFirebase;
