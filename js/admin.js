@@ -17,9 +17,10 @@ let pendingDeleteType = null; // 'key' or 'firebase'
 /**
  * Open admin panel
  */
-function openAdminPanel() {
+async function openAdminPanel() {
     // Check if user is admin
-    if (!isAdmin()) {
+    const isUserAdmin = await isAdmin();
+    if (!isUserAdmin) {
         showTelegramAlert('⛔ Access denied. Admin only.');
         return;
     }
@@ -28,8 +29,8 @@ function openAdminPanel() {
     document.getElementById('adminModal').classList.remove('hidden');
     
     // Load data
-    loadAccessKeysList();
-    loadFirebaseSourcesList();
+    await loadAccessKeysList();
+    await loadFirebaseSourcesList();
     updateAdminUserInfo();
     
     hapticFeedback('light');
@@ -61,13 +62,13 @@ function updateAdminUserInfo() {
 /**
  * Load and render access keys list
  */
-function loadAccessKeysList() {
+async function loadAccessKeysList() {
     const container = document.getElementById('accessKeysList');
     if (!container) return;
 
-    const keys = getAllAccessKeys();
+    const keys = await getAllAccessKeys();
 
-    if (keys.length === 0) {
+    if (!keys || keys.length === 0) {
         container.innerHTML = `
             <div style="text-align:center; padding:12px; color:var(--tg-theme-hint-color,#999); font-size:14px;">
                 No access keys generated yet
@@ -230,7 +231,6 @@ function executeDelete() {
         removeFirebaseSource(pendingDeleteId);
         showTelegramAlert('✅ Firebase source removed successfully');
         loadFirebaseSourcesList();
-        // Refresh dashboard if needed
         if (typeof refreshDashboard === 'function') {
             refreshDashboard();
         }
@@ -256,7 +256,7 @@ function closeConfirmModal() {
 /**
  * Load and render Firebase sources list
  */
-function loadFirebaseSourcesList() {
+async function loadFirebaseSourcesList() {
     const container = document.getElementById('firebaseSourcesList');
     if (!container) return;
 
@@ -362,7 +362,6 @@ async function saveFirebaseSource() {
             closeAddFirebaseModal();
             loadFirebaseSourcesList();
             
-            // Refresh dashboard
             if (typeof refreshDashboard === 'function') {
                 refreshDashboard();
             }
