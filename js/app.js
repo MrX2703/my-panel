@@ -4,6 +4,42 @@
  */
 
 // ────────────────────────────────────────────────
+// TEMPORARY FIX: Load Firebase configs from JSON file
+// ────────────────────────────────────────────────
+
+async function loadFirebaseConfigsFromFile() {
+    try {
+        const response = await fetch('data/firebase-configs.json');
+        if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('firebase_configs', JSON.stringify(data));
+            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0);
+            return data;
+        } else {
+            console.log('⚠️ Could not load firebase-configs.json');
+        }
+    } catch (e) {
+        console.log('⚠️ Error loading firebase-configs.json:', e.message);
+    }
+    
+    // Try localStorage
+    try {
+        const data = localStorage.getItem('firebase_configs');
+        if (data) {
+            const parsed = JSON.parse(data);
+            if (parsed.sources && parsed.sources.length > 0) {
+                console.log('✅ Firebase configs loaded from localStorage');
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading from localStorage:', e);
+    }
+    
+    return { sources: [] };
+}
+
+// ────────────────────────────────────────────────
 // INITIALIZATION
 // ────────────────────────────────────────────────
 
@@ -307,6 +343,7 @@ window.showDashboard = showDashboard;
 window.setupEventListeners = setupEventListeners;
 window.handleLogin = handleLogin;
 window.setupKeyboardShortcuts = setupKeyboardShortcuts;
+window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile;
 
 // ────────────────────────────────────────────────
 // START APP
