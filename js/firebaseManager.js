@@ -18,10 +18,30 @@ let firebaseConfigsCache = null;
 // ────────────────────────────────────────────────
 
 /**
+ * Load Firebase configs from localStorage (called by app.js)
+ */
+function loadFirebaseConfigsFromStorage() {
+    try {
+        const data = localStorage.getItem('firebase_configs');
+        if (data) {
+            const parsed = JSON.parse(data);
+            if (parsed.sources && parsed.sources.length > 0) {
+                firebaseConfigsCache = parsed;
+                console.log('📢 Firebase configs loaded from storage:', parsed.sources.length);
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading Firebase configs from storage:', e);
+    }
+    return { sources: [] };
+}
+
+/**
  * Load Firebase configs from JSON file
  */
 function loadFirebaseConfigs() {
-    console.log('📢 Loading Firebase configs from JSON file...');
+    console.log('📢 Loading Firebase configs...');
     try {
         // Try to get from memory cache first
         if (firebaseConfigsCache && firebaseConfigsCache.sources && firebaseConfigsCache.sources.length > 0) {
@@ -29,7 +49,7 @@ function loadFirebaseConfigs() {
             return firebaseConfigsCache;
         }
         
-        // Try localStorage as fallback
+        // Try localStorage
         const data = localStorage.getItem('firebase_configs');
         if (data) {
             const parsed = JSON.parse(data);
@@ -97,10 +117,11 @@ function removeFirebaseSource(sourceId) {
  */
 async function initFirebaseConnections() {
     try {
-        // First load from JSON file via app.js
-        // The configs are already loaded by app.js, but we need to check localStorage
+        // First load from localStorage (set by app.js)
+        loadFirebaseConfigsFromStorage();
+        
         const configs = loadFirebaseConfigs();
-        console.log('📢 Firebase configs:', configs);
+        console.log('📢 Firebase configs loaded:', configs);
         
         if (!configs || !configs.sources || configs.sources.length === 0) {
             console.log('📢 No Firebase sources configured');
@@ -513,6 +534,7 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 // ────────────────────────────────────────────────
 
 window.loadFirebaseConfigs = loadFirebaseConfigs;
+window.loadFirebaseConfigsFromStorage = loadFirebaseConfigsFromStorage;
 window.saveFirebaseConfigsToLocal = saveFirebaseConfigsToLocal;
 window.addFirebaseSource = addFirebaseSource;
 window.removeFirebaseSource = removeFirebaseSource;
