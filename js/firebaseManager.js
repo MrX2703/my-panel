@@ -9,7 +9,7 @@
 
 let firebaseInstances = {};
 let allDevices = [];
-let deviceListeners = [];
+let deviceListeners = {};
 let isInitialized = false;
 
 // ────────────────────────────────────────────────
@@ -23,21 +23,27 @@ async function initFirebaseConnections() {
     try {
         const configs = loadFirebaseConfigs();
         if (!configs || !configs.sources || configs.sources.length === 0) {
-            console.log('No Firebase sources configured');
+            console.log('📢 No Firebase sources configured');
             return false;
         }
 
         let successCount = 0;
         for (const source of configs.sources) {
+            console.log(`📢 Connecting to Firebase: ${source.id}`);
             const connected = await connectToFirebase(source);
-            if (connected) successCount++;
+            if (connected) {
+                successCount++;
+                console.log(`✅ Connected to Firebase: ${source.id}`);
+            } else {
+                console.log(`❌ Failed to connect to Firebase: ${source.id}`);
+            }
         }
 
         isInitialized = true;
-        console.log(`Connected to ${successCount}/${configs.sources.length} Firebase sources`);
+        console.log(`📢 Connected to ${successCount}/${configs.sources.length} Firebase sources`);
         return successCount > 0;
     } catch (error) {
-        console.error('Error initializing Firebase:', error);
+        console.error('❌ Error initializing Firebase:', error);
         return false;
     }
 }
@@ -50,9 +56,12 @@ async function connectToFirebase(source) {
         const { id, url, key } = source;
         
         // Check if already connected
-        if (firebaseInstances[id]) {
+        if (firebaseInstances[id] && firebaseInstances[id].connected) {
             return true;
         }
+
+        console.log(`📢 Connecting to Firebase source: ${id}`);
+        console.log(`📢 URL: ${url}`);
 
         // Initialize Firebase app
         const firebaseConfig = {
@@ -63,19 +72,29 @@ async function connectToFirebase(source) {
             storageBucket: url.replace('https://', '').replace('.firebaseio.com', '.appspot.com'),
         };
 
+        console.log('📢 Firebase Config:', {
+            apiKey: key.substring(0, 10) + '...',
+            authDomain: firebaseConfig.authDomain,
+            projectId: firebaseConfig.projectId
+        });
+
         // Check if app already exists
         let app;
         try {
             app = firebase.app(id);
+            console.log('📢 Using existing Firebase app');
         } catch (e) {
             app = firebase.initializeApp(firebaseConfig, id);
+            console.log('📢 Created new Firebase app');
         }
 
         // Get Firestore instance
         const db = firebase.firestore(app);
         
         // Test connection by fetching a single document
-        await db.collection('devices').limit(1).get();
+        console.log('📢 Testing Firebase connection...');
+        const testSnapshot = await db.collection('devices').limit(1).get();
+        console.log(`📢 Test query returned ${testSnapshot.size} documents`);
 
         firebaseInstances[id] = {
             app: app,
@@ -84,10 +103,11 @@ async function connectToFirebase(source) {
             connected: true
         };
 
-        console.log(`✅ Connected to Firebase: ${source.id}`);
+        console.log(`✅ Connected to Firebase: ${id}`);
         return true;
     } catch (error) {
         console.error(`❌ Failed to connect to Firebase ${source.id}:`, error);
+        console.error('❌ Error details:', error.message);
         // Store as disconnected
         firebaseInstances[source.id] = {
             config: source,
@@ -114,10 +134,10 @@ function disconnectFromFirebase(sourceId) {
                 firebaseInstances[sourceId].app.delete();
             }
             delete firebaseInstances[sourceId];
-            console.log(`Disconnected from Firebase: ${sourceId}`);
+            console.log(`📢 Disconnected from Firebase: ${sourceId}`);
         }
     } catch (error) {
-        console.error(`Error disconnecting from Firebase ${sourceId}:`, error);
+        console.error(`❌ Error disconnecting from Firebase ${sourceId}:`, error);
     }
 }
 
@@ -132,18 +152,26 @@ async function fetchAllDevices() {
     allDevices = [];
     const sources = Object.keys(firebaseInstances);
 
+    console.log(`📢 Fetching devices from ${sources.length} sources...`);
+
     for (const sourceId of sources) {
         const instance = firebaseInstances[sourceId];
-        if (!instance.connected) continue;
+        if (!instance.connected) {
+            console.log(`⚠️ Source ${sourceId} is not connected, skipping...`);
+            continue;
+        }
 
         try {
+            console.log(`📢 Fetching devices from ${sourceId}...`);
             const devices = await fetchDevicesFromSource(sourceId);
+            console.log(`📢 Found ${devices.length} devices in ${sourceId}`);
             allDevices = allDevices.concat(devices);
         } catch (error) {
-            console.error(`Error fetching devices from ${sourceId}:`, error);
+            console.error(`❌ Error fetching devices from ${sourceId}:`, error);
         }
     }
 
+    console.log(`📢 Total devices found: ${allDevices.length}`);
     return allDevices;
 }
 
@@ -157,31 +185,45 @@ async function fetchDevicesFromSource(sourceId) {
     }
 
     try {
+        console.log(`📢 Querying devices collection...`);
         const snapshot = await instance.db.collection('devices').get();
         const devices = [];
 
+        console.log(`📢 Snapshot size: ${snapshot.size} documents`);
+
+        if (snapshot.empty) {
+            console.log('⚠️ No devices found in collection');
+            return [];
+        }
+
         snapshot.forEach(doc => {
             const data = doc.data();
-            devices.push({
+            console.log(`📢 Device document: ${doc.id}`, data);
+            
+            // Handle different field names
+            const device = {
                 id: doc.id,
                 sourceId: sourceId,
-                name: data.name || data.deviceName || 'Unknown Device',
-                number: data.number || data.phoneNumber || data.phone || 'N/A',
+                name: data.name || data.deviceName || data.device_name || 'Unknown Device',
+                number: data.number || data.phoneNumber || data.phone || data.phone_number || 'N/A',
                 status: data.status || data.isOnline ? 'online' : 'offline',
-                battery: data.battery || data.batteryLevel || 0,
-                signal: data.signal || data.signalStrength || 'N/A',
-                model: data.model || data.deviceModel || 'N/A',
-                lastSeen: data.lastSeen || data.lastUpdated || data.timestamp || new Date().toISOString(),
-                sims: data.sims || data.simNumbers || [data.number || 'N/A'],
-                unread: data.unreadCount || data.unreadSms || 0,
-                // Store all data for flexibility
+                battery: data.battery || data.batteryLevel || data.battery_level || 0,
+                signal: data.signal || data.signalStrength || data.signal_strength || 'N/A',
+                model: data.model || data.deviceModel || data.device_model || 'N/A',
+                lastSeen: data.lastSeen || data.lastUpdated || data.last_updated || data.timestamp || new Date().toISOString(),
+                sims: data.sims || data.simNumbers || data.sim_numbers || [data.number || 'N/A'],
+                unread: data.unreadCount || data.unreadSms || data.unread_sms || 0,
                 raw: data
-            });
+            };
+            
+            devices.push(device);
+            console.log(`✅ Parsed device: ${device.name} (${device.status})`);
         });
 
         return devices;
     } catch (error) {
-        console.error(`Error fetching devices from ${sourceId}:`, error);
+        console.error(`❌ Error fetching devices from ${sourceId}:`, error);
+        console.error('❌ Error details:', error.message);
         throw error;
     }
 }
@@ -197,19 +239,22 @@ function listenToDevices(callback) {
     deviceListeners = {};
 
     const sources = Object.keys(firebaseInstances);
+    console.log(`📢 Setting up listeners for ${sources.length} sources...`);
 
     for (const sourceId of sources) {
         const instance = firebaseInstances[sourceId];
         if (!instance.connected) continue;
 
+        console.log(`📢 Setting up listener for ${sourceId}...`);
         const unsubscribe = instance.db.collection('devices')
             .onSnapshot((snapshot) => {
+                console.log(`📢 Device update detected in ${sourceId}`);
                 // Device data changed, refetch all
                 fetchAllDevices().then(() => {
                     if (callback) callback(allDevices);
                 });
             }, (error) => {
-                console.error(`Error listening to devices from ${sourceId}:`, error);
+                console.error(`❌ Error listening to devices from ${sourceId}:`, error);
             });
 
         if (!deviceListeners[sourceId]) {
@@ -233,6 +278,7 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
     }
 
     try {
+        console.log(`📢 Fetching SMS for device: ${deviceId}, SIM: ${simNumber}`);
         let query = instance.db.collection('sms_messages')
             .where('deviceId', '==', deviceId)
             .orderBy('timestamp', 'desc')
@@ -245,6 +291,8 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 
         const snapshot = await query.get();
         const messages = [];
+
+        console.log(`📢 Found ${snapshot.size} SMS messages`);
 
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -261,9 +309,10 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 
         return messages;
     } catch (error) {
-        console.error(`Error fetching SMS for device ${deviceId}:`, error);
+        console.error(`❌ Error fetching SMS for device ${deviceId}:`, error);
         // Try fallback query without orderBy if index doesn't exist
         try {
+            console.log('📢 Trying fallback query without orderBy...');
             let query = instance.db.collection('sms_messages')
                 .where('deviceId', '==', deviceId)
                 .limit(limit);
@@ -288,9 +337,10 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
             });
             // Sort manually by time
             messages.sort((a, b) => new Date(b.time) - new Date(a.time));
+            console.log(`📢 Fallback query returned ${messages.length} messages`);
             return messages;
         } catch (fallbackError) {
-            console.error('Fallback SMS fetch failed:', fallbackError);
+            console.error('❌ Fallback SMS fetch failed:', fallbackError);
             return [];
         }
     }
@@ -302,9 +352,11 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 function listenToSms(deviceId, sourceId, simNumber, callback) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
-        console.error('Firebase not connected');
+        console.error('❌ Firebase not connected');
         return null;
     }
+
+    console.log(`📢 Setting up SMS listener for device: ${deviceId}, SIM: ${simNumber}`);
 
     let query = instance.db.collection('sms_messages')
         .where('deviceId', '==', deviceId)
@@ -316,6 +368,7 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
     }
 
     const unsubscribe = query.onSnapshot((snapshot) => {
+        console.log(`📢 SMS update detected for device: ${deviceId}`);
         const messages = [];
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -331,7 +384,7 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
         });
         if (callback) callback(messages);
     }, (error) => {
-        console.error('Error listening to SMS:', error);
+        console.error('❌ Error listening to SMS:', error);
     });
 
     return unsubscribe;
@@ -351,6 +404,8 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
     }
 
     try {
+        console.log(`📢 Sending SMS from ${simNumber} to ${toNumber}`);
+        
         const smsData = {
             deviceId: deviceId,
             simNumber: simNumber,
@@ -365,6 +420,7 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 
         // Save to Firestore
         const docRef = await instance.db.collection('sms_messages').add(smsData);
+        console.log(`✅ SMS sent successfully: ${docRef.id}`);
         
         // Also update the device's last activity
         await instance.db.collection('devices').doc(deviceId).update({
@@ -372,6 +428,7 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             lastSms: new Date().toISOString()
         }).catch(() => {
             // Ignore if device doesn't exist or can't update
+            console.log('⚠️ Could not update device lastActivity');
         });
 
         return {
@@ -380,7 +437,7 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             message: 'SMS sent successfully'
         };
     } catch (error) {
-        console.error('Error sending SMS:', error);
+        console.error('❌ Error sending SMS:', error);
         throw error;
     }
 }
