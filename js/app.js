@@ -17,7 +17,8 @@ async function initApp() {
     setupTelegramApp();
 
     // Check for existing session
-    if (isUserLoggedIn()) {
+    const loggedIn = await isUserLoggedIn();
+    if (loggedIn) {
         // User is already logged in
         showDashboard();
     } else {
@@ -210,7 +211,7 @@ function setupEventListeners() {
 /**
  * Handle login
  */
-function handleLogin() {
+async function handleLogin() {
     const input = document.getElementById('accessKeyInput');
     if (!input) return;
 
@@ -223,7 +224,7 @@ function handleLogin() {
     }
 
     // Attempt login
-    const success = loginWithKey(key);
+    const success = await loginWithKey(key);
     
     if (success) {
         // Login successful
