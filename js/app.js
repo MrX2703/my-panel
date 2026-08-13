@@ -16,6 +16,7 @@ async function loadFirebaseConfigs() {
         const response = await fetch('data/firebase-configs.json');
         if (response.ok) {
             const data = await response.json();
+            // Save to localStorage for firebaseManager to read
             localStorage.setItem('firebase_configs', JSON.stringify(data));
             console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
             return data;
@@ -57,6 +58,11 @@ async function initApp() {
     try {
         // Load Firebase configs from JSON file on startup
         await loadFirebaseConfigs();
+        
+        // Force firebaseManager to reload configs from localStorage
+        if (typeof loadFirebaseConfigsFromStorage === 'function') {
+            loadFirebaseConfigsFromStorage();
+        }
     } catch (e) {
         console.log('⚠️ Error in loadFirebaseConfigs:', e.message);
     }
