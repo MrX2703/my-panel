@@ -89,7 +89,6 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        // Test connection using devices.json
         const testUrl = `${url}/devices.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
@@ -156,40 +155,62 @@ async function fetchAllDevices() {
     return allDevices;
 }
 
+/**
+ * Get device status - FIXED for your data
+ * Your data has: "status": false → offline, "status": true → online
+ */
 function getDeviceStatus(deviceData) {
-    // Check direct status field
+    // ============================================
+    // CHECK DIRECT STATUS FIELD
+    // ============================================
     if (deviceData.status !== undefined) {
         const statusValue = deviceData.status;
-        if (statusValue === false || 
-            statusValue === 'false' || 
-            statusValue === 'pending' || 
-            statusValue === 'offline' ||
-            statusValue === null) {
+        
+        // status: true → online, status: false → offline
+        if (statusValue === true || statusValue === 'true' || statusValue === 'online') {
+            return 'online';
+        }
+        if (statusValue === false || statusValue === 'false' || statusValue === 'offline' || statusValue === null) {
             return 'offline';
         }
-        return 'online';
     }
     
-    // Check command status
+    // ============================================
+    // CHECK COMMAND STATUS
+    // ============================================
     const cmdData = deviceData.command || deviceData.commands || {};
-    if (cmdData.status === 'pending') {
-        return 'offline';
+    if (cmdData.status) {
+        if (cmdData.status === 'pending' || cmdData.status === 'offline') {
+            return 'offline';
+        }
+        if (cmdData.status === 'sent' || cmdData.status === 'online') {
+            return 'online';
+        }
     }
     
-    // Check webhookEvent status
+    // ============================================
+    // CHECK WEBHOOK STATUS
+    // ============================================
     const webhookData = deviceData.webhookEvent?.sendSms || {};
-    if (webhookData.status === 'pending') {
-        return 'offline';
+    if (webhookData.status) {
+        if (webhookData.status === 'pending' || webhookData.status === 'offline') {
+            return 'offline';
+        }
+        if (webhookData.status === 'sent' || webhookData.status === 'online') {
+            return 'online';
+        }
     }
     
+    // ============================================
+    // DEFAULT TO ONLINE
+    // ============================================
     return 'online';
 }
 
 /**
- * Extract phone number from device data - Priority Order
+ * Extract phone number from device data
  */
 function extractPhoneNumber(deviceData) {
-    // Try multiple locations in priority order
     const locations = [
         deviceData.command?.number,
         deviceData.webhookEvent?.sendSms?.number,
@@ -204,11 +225,9 @@ function extractPhoneNumber(deviceData) {
     for (const loc of locations) {
         if (loc && loc !== 'N/A' && loc !== '') {
             let phone = String(loc).replace(/\s+/g, '');
-            // If number starts with 0, add +91
             if (phone.startsWith('0')) {
                 phone = '+91' + phone.substring(1);
             }
-            // If number is 10 digits and doesn't have +, add +91
             if (phone.match(/^\d{10}$/)) {
                 phone = '+91' + phone;
             }
@@ -227,7 +246,6 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
-        // Use devices.json instead of clients.json
         const apiUrl = `${url}/devices.json?auth=${key}`;
         console.log(`📢 Fetching from Realtime Database: devices.json`);
         
@@ -264,7 +282,7 @@ async function fetchDevicesFromSource(sourceId) {
             }
             
             // ============================================
-            // STATUS
+            // STATUS - USING FIXED FUNCTION
             // ============================================
             const status = getDeviceStatus(deviceData);
             
@@ -296,7 +314,10 @@ async function fetchDevicesFromSource(sourceId) {
             };
             
             devices.push(device);
-            console.log(`✅ Device: ${device.id.substring(0, 8)}... → ${device.number} (${device.status})`);
+            
+            // Log status for debugging
+            const statusIcon = status === 'online' ? '🟢' : '🔴';
+            console.log(`${statusIcon} Device: ${device.id.substring(0, 8)}... → ${device.number} (${status})`);
         }
 
         return devices;
@@ -336,7 +357,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     try {
         const { url, key } = instance;
         
-        // Use the exact endpoint you specified
         const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=${limit}`;
         console.log(`📢 Fetching messages for device: ${deviceId.substring(0, 8)}...`);
         
@@ -357,7 +377,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
         
         const messages = Object.values(data);
         
-        // Sort by timestamp descending (newest first)
         messages.sort((a, b) => {
             const aTime = a.id || a.timestamp || 0;
             const bTime = b.id || b.timestamp || 0;
