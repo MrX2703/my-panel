@@ -4,6 +4,47 @@
  */
 
 // ────────────────────────────────────────────────
+// LOAD FIREBASE CONFIGS FROM JSON FILE
+// ────────────────────────────────────────────────
+
+/**
+ * Load Firebase configs from JSON file
+ */
+async function loadFirebaseConfigsFromFile() {
+    console.log('📢 Loading Firebase configs from JSON file...');
+    try {
+        const response = await fetch('data/firebase-configs.json');
+        if (response.ok) {
+            const data = await response.json();
+            localStorage.setItem('firebase_configs', JSON.stringify(data));
+            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
+            return data;
+        } else {
+            console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
+        }
+    } catch (e) {
+        console.log('⚠️ Error loading firebase-configs.json:', e.message);
+    }
+    
+    // Try localStorage fallback
+    try {
+        const data = localStorage.getItem('firebase_configs');
+        if (data) {
+            const parsed = JSON.parse(data);
+            if (parsed.sources && parsed.sources.length > 0) {
+                console.log('✅ Firebase configs loaded from localStorage fallback');
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading from localStorage:', e);
+    }
+    
+    console.log('📢 No Firebase configs found');
+    return { sources: [] };
+}
+
+// ────────────────────────────────────────────────
 // INITIALIZATION
 // ────────────────────────────────────────────────
 
@@ -12,6 +53,18 @@
  */
 async function initApp() {
     console.log('🚀 Initializing SMS Dashboard...');
+
+    try {
+        // Load Firebase configs from JSON file on startup
+        await loadFirebaseConfigsFromFile();
+        
+        // Force firebaseManager to reload configs from localStorage
+        if (typeof loadFirebaseConfigsFromStorage === 'function') {
+            loadFirebaseConfigsFromStorage();
+        }
+    } catch (e) {
+        console.log('⚠️ Error in loadFirebaseConfigs:', e.message);
+    }
 
     // Set up Telegram WebApp
     setupTelegramApp();
@@ -304,6 +357,7 @@ window.showDashboard = showDashboard;
 window.setupEventListeners = setupEventListeners;
 window.handleLogin = handleLogin;
 window.setupKeyboardShortcuts = setupKeyboardShortcuts;
+window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile;
 
 // ────────────────────────────────────────────────
 // START APP
