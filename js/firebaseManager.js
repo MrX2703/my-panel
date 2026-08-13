@@ -1,6 +1,7 @@
 /**
  * FIREBASE MANAGER
  * Handles multiple Firebase connections, data fetching, and real-time updates
+ * Reads configs from firebase-configs.json file only
  */
 
 // ────────────────────────────────────────────────
@@ -14,141 +15,53 @@ let isInitialized = false;
 let firebaseConfigsCache = null;
 
 // ────────────────────────────────────────────────
-// CONFIG LOADING - FROM GITHUB
+// CONFIG LOADING - FROM JSON FILE ONLY
 // ────────────────────────────────────────────────
 
-function loadFirebaseConfigsFromStorage() {
-    try {
-        const data = localStorage.getItem('firebase_configs');
-        if (data) {
-            const parsed = JSON.parse(data);
-            if (parsed.sources && parsed.sources.length > 0) {
-                firebaseConfigsCache = parsed;
-                console.log('📢 Firebase configs loaded from storage:', parsed.sources.length);
-                return parsed;
-            }
-        }
-    } catch (e) {
-        console.error('Error loading Firebase configs from storage:', e);
-    }
-    return { sources: [] };
-}
-
+/**
+ * Load Firebase configs from JSON file
+ */
 async function loadFirebaseConfigs() {
-    console.log('📢 Loading Firebase configs...');
+    console.log('📢 Loading Firebase configs from JSON file...');
     try {
-        if (firebaseConfigsCache && firebaseConfigsCache.sources && firebaseConfigsCache.sources.length > 0) {
-            console.log('📢 Using cached Firebase configs:', firebaseConfigsCache.sources.length);
-            return firebaseConfigsCache;
+        // Force fresh load from JSON file
+        const response = await fetch('data/firebase-configs.json?' + Date.now());
+        if (response.ok) {
+            const data = await response.json();
+            firebaseConfigsCache = data;
+            // Also save to localStorage as backup
+            localStorage.setItem('firebase_configs', JSON.stringify(data));
+            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
+            return data;
+        } else {
+            console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
         }
-        
-        // Try GitHub first
-        const githubConfigs = await loadFirebaseConfigsFromGitHub();
-        if (githubConfigs && githubConfigs.sources && githubConfigs.sources.length > 0) {
-            firebaseConfigsCache = githubConfigs;
-            localStorage.setItem('firebase_configs', JSON.stringify(githubConfigs));
-            console.log('📢 Firebase configs loaded from GitHub:', githubConfigs.sources.length);
-            return githubConfigs;
-        }
-        
-        // Try localStorage
+    } catch (e) {
+        console.log('⚠️ Error loading firebase-configs.json:', e.message);
+    }
+    
+    // Fallback: try localStorage
+    try {
         const data = localStorage.getItem('firebase_configs');
         if (data) {
             const parsed = JSON.parse(data);
             if (parsed.sources && parsed.sources.length > 0) {
-                console.log('📢 Firebase configs loaded from localStorage:', parsed.sources.length);
+                console.log('📢 Firebase configs loaded from localStorage fallback');
                 firebaseConfigsCache = parsed;
                 return parsed;
             }
         }
-        
-        // Try local JSON file (fallback)
-        try {
-            const response = await fetch('data/firebase-configs.json');
-            if (response.ok) {
-                const data = await response.json();
-                if (data.sources && data.sources.length > 0) {
-                    firebaseConfigsCache = data;
-                    localStorage.setItem('firebase_configs', JSON.stringify(data));
-                    console.log('📢 Firebase configs loaded from JSON file:', data.sources.length);
-                    return data;
-                }
-            }
-        } catch (e) {
-            console.log('⚠️ Could not load from JSON file:', e.message);
-        }
     } catch (e) {
-        console.error('Error loading Firebase configs:', e);
+        console.error('Error loading from localStorage:', e);
     }
     
     console.log('📢 No Firebase configs found');
     return { sources: [] };
 }
 
-function saveFirebaseConfigsToLocal(configs) {
-    try {
-        localStorage.setItem('firebase_configs', JSON.stringify(configs));
-        firebaseConfigsCache = configs;
-        console.log('📢 Firebase configs saved to localStorage');
-    } catch (e) {
-        console.error('Error saving Firebase configs:', e);
-    }
-}
-
-// ────────────────────────────────────────────────
-// FIREBASE SOURCE MANAGEMENT
-// ────────────────────────────────────────────────
-
-async function addFirebaseSource(url, key) {
-    const configs = await loadFirebaseConfigs();
-    const newSource = {
-        id: generateId(),
-        url: url,
-        key: key,
-        addedAt: getCurrentISO()
-    };
-    configs.sources.push(newSource);
-    
-    // Save to GitHub
-    const savedToGitHub = await saveFirebaseConfigsToGitHub(configs);
-    
-    // Save to localStorage (backup)
-    saveFirebaseConfigsToLocal(configs);
-    
-    if (savedToGitHub) {
-        console.log('📢 Firebase source added and saved to GitHub:', newSource.id);
-        showTelegramAlert('✅ Firebase source added and saved to GitHub!');
-    } else {
-        console.log('⚠️ Firebase source added but NOT saved to GitHub.');
-        showTelegramAlert('⚠️ Source added locally but GitHub save failed. Check your token.');
-    }
-    
-    console.log('📢 Total sources:', configs.sources.length);
-    return newSource;
-}
-
-async function removeFirebaseSource(sourceId) {
-    const configs = await loadFirebaseConfigs();
-    configs.sources = configs.sources.filter(s => s.id !== sourceId);
-    
-    // Save to GitHub
-    const savedToGitHub = await saveFirebaseConfigsToGitHub(configs);
-    
-    // Save to localStorage (backup)
-    saveFirebaseConfigsToLocal(configs);
-    
-    disconnectFromFirebase(sourceId);
-    
-    if (savedToGitHub) {
-        console.log('📢 Firebase source removed from GitHub:', sourceId);
-        showTelegramAlert('✅ Firebase source removed from GitHub!');
-    } else {
-        console.log('⚠️ Firebase source removed locally but GitHub save failed.');
-    }
-    
-    console.log('📢 Remaining sources:', configs.sources.length);
-}
-
+/**
+ * Get all Firebase sources
+ */
 async function getAllFirebaseSources() {
     const configs = await loadFirebaseConfigs();
     return configs.sources || [];
@@ -160,7 +73,6 @@ async function getAllFirebaseSources() {
 
 async function initFirebaseConnections() {
     try {
-        loadFirebaseConfigsFromStorage();
         const configs = await loadFirebaseConfigs();
         console.log('📢 Firebase configs loaded:', configs);
         
@@ -518,10 +430,6 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 // ────────────────────────────────────────────────
 
 window.loadFirebaseConfigs = loadFirebaseConfigs;
-window.loadFirebaseConfigsFromStorage = loadFirebaseConfigsFromStorage;
-window.saveFirebaseConfigsToLocal = saveFirebaseConfigsToLocal;
-window.addFirebaseSource = addFirebaseSource;
-window.removeFirebaseSource = removeFirebaseSource;
 window.getAllFirebaseSources = getAllFirebaseSources;
 window.initFirebaseConnections = initFirebaseConnections;
 window.connectToFirebase = connectToFirebase;
