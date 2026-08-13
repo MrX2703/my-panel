@@ -2,8 +2,8 @@
   "sources": [
     {
       "id": "source_demo_001",
-      "url": "https://your-project.firebaseio.com",
-      "key": "AIzaSyDemoKeyYourFirebaseKeyHere",
+      "url": "https://muajob-29c86-default-rtdb.firebaseio.com",
+      "key": "G",
       "addedAt": "2026-01-01T00:00:00.000Z"
     }
   ]
