@@ -9,9 +9,8 @@
 
 /**
  * Load Firebase configs from JSON file
- * This function must be defined BEFORE initApp()
  */
-async function loadFirebaseConfigsFromFile() {
+async function loadFirebaseConfigsFromFile_v2() {
     console.log('📢 Loading Firebase configs from JSON file...');
     try {
         const response = await fetch('data/firebase-configs.json');
@@ -57,7 +56,7 @@ async function initApp() {
 
     try {
         // Load Firebase configs from JSON file on startup
-        await loadFirebaseConfigsFromFile();
+        await loadFirebaseConfigsFromFile_v2();
     } catch (e) {
         console.log('⚠️ Error in loadFirebaseConfigsFromFile:', e.message);
     }
@@ -353,7 +352,7 @@ window.showDashboard = showDashboard;
 window.setupEventListeners = setupEventListeners;
 window.handleLogin = handleLogin;
 window.setupKeyboardShortcuts = setupKeyboardShortcuts;
-window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile;
+window.loadFirebaseConfigsFromFile = loadFirebaseConfigsFromFile_v2;
 
 // ────────────────────────────────────────────────
 // START APP
