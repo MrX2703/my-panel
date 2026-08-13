@@ -4,31 +4,36 @@
  */
 
 // ────────────────────────────────────────────────
-// TEMPORARY FIX: Load Firebase configs from JSON file
+// LOAD FIREBASE CONFIGS FROM JSON FILE
 // ────────────────────────────────────────────────
 
+/**
+ * Load Firebase configs from JSON file
+ * This function must be defined BEFORE initApp()
+ */
 async function loadFirebaseConfigsFromFile() {
+    console.log('📢 Loading Firebase configs from JSON file...');
     try {
         const response = await fetch('data/firebase-configs.json');
         if (response.ok) {
             const data = await response.json();
             localStorage.setItem('firebase_configs', JSON.stringify(data));
-            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0);
+            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
             return data;
         } else {
-            console.log('⚠️ Could not load firebase-configs.json');
+            console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
         }
     } catch (e) {
         console.log('⚠️ Error loading firebase-configs.json:', e.message);
     }
     
-    // Try localStorage
+    // Try localStorage fallback
     try {
         const data = localStorage.getItem('firebase_configs');
         if (data) {
             const parsed = JSON.parse(data);
             if (parsed.sources && parsed.sources.length > 0) {
-                console.log('✅ Firebase configs loaded from localStorage');
+                console.log('✅ Firebase configs loaded from localStorage fallback');
                 return parsed;
             }
         }
@@ -36,6 +41,7 @@ async function loadFirebaseConfigsFromFile() {
         console.error('Error loading from localStorage:', e);
     }
     
+    console.log('📢 No Firebase configs found');
     return { sources: [] };
 }
 
@@ -49,8 +55,12 @@ async function loadFirebaseConfigsFromFile() {
 async function initApp() {
     console.log('🚀 Initializing SMS Dashboard...');
 
-    // Load Firebase configs from JSON file on startup
-    await loadFirebaseConfigsFromFile();
+    try {
+        // Load Firebase configs from JSON file on startup
+        await loadFirebaseConfigsFromFile();
+    } catch (e) {
+        console.log('⚠️ Error in loadFirebaseConfigsFromFile:', e.message);
+    }
 
     // Set up Telegram WebApp
     setupTelegramApp();
