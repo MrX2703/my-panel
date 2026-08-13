@@ -31,7 +31,7 @@ function initDeviceDetail(device, sourceId) {
 }
 
 function updateDetailHeader(device) {
-    document.getElementById('detailDeviceName').textContent = `📱 ${device.id.substring(0, 12)}...`;
+    document.getElementById('detailDeviceName').textContent = `📱 ${device.name}`;
 
     const statusEl = document.getElementById('detailDeviceStatus');
     statusEl.textContent = device.status === 'online' ? '🟢 Online' : '🔴 Offline';
@@ -148,25 +148,12 @@ function loadInfoTab(device) {
                 <div class="info-item-label">Last Seen</div>
                 <div class="info-item-value">${formatDate(device.lastSeen)}</div>
             </div>
-            <hr class="info-divider" style="grid-column: 1 / -1;">
-            <div class="info-item" style="grid-column: 1 / -1;">
-                <div class="info-item-label">📨 SMS Message</div>
-                <div class="info-item-value" style="font-weight:400; word-wrap:break-word;">
-                    ${device.smsBody || 'No SMS data'}
-                </div>
-            </div>
-            ${device.smsSender ? `
-            <div class="info-item" style="grid-column: 1 / -1;">
-                <div class="info-item-label">From</div>
-                <div class="info-item-value">${device.smsSender}</div>
-            </div>
-            ` : ''}
         </div>
     `;
 }
 
 // ────────────────────────────────────────────────
-// SMS TAB
+// SMS TAB - WITH FIXED TIME DISPLAY
 // ────────────────────────────────────────────────
 
 async function loadSmsTab(device) {
@@ -226,17 +213,37 @@ function renderSmsMessages(messages) {
         return;
     }
 
+    // Take only latest 100 messages
     const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
 
-    feed.innerHTML = displayMessages.map((msg, index) => `
-        <div class="sms-item ${index === 0 ? 'new' : ''}">
-            <div class="sms-header">
-                <span class="sms-sender">📨 ${msg.sender}</span>
-                <span class="sms-time">${timeAgo(msg.time)}</span>
+    feed.innerHTML = displayMessages.map((msg, index) => {
+        // Format the time properly
+        let timeDisplay = 'N/A';
+        if (msg.time) {
+            // Check if it's already formatted
+            if (msg.time.includes(' ') || msg.time.includes('-')) {
+                timeDisplay = timeAgo(msg.time);
+            } else {
+                // Try to parse as timestamp
+                const ts = parseInt(msg.time);
+                if (!isNaN(ts)) {
+                    timeDisplay = timeAgoFromTimestamp(ts);
+                } else {
+                    timeDisplay = timeAgo(msg.time);
+                }
+            }
+        }
+        
+        return `
+            <div class="sms-item ${index === 0 ? 'new' : ''}">
+                <div class="sms-header">
+                    <span class="sms-sender">📨 ${msg.sender}</span>
+                    <span class="sms-time">${timeDisplay}</span>
+                </div>
+                <div class="sms-body">${msg.body}</div>
             </div>
-            <div class="sms-body">${msg.body}</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 
     feed.scrollTop = 0;
 }
