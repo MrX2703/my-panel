@@ -15,9 +15,6 @@ let dashboardListeners = [];
 // RENDER DASHBOARD
 // ────────────────────────────────────────────────
 
-/**
- * Render the dashboard with devices
- */
 function renderDashboard(devices) {
     if (!devices) {
         devices = allDevices || [];
@@ -28,25 +25,18 @@ function renderDashboard(devices) {
     applyFilter(currentFilter);
 }
 
-/**
- * Update statistics
- */
 function updateStats(devices) {
     const onlineCount = devices.filter(d => d.status === 'online').length;
     const totalCount = devices.length;
-    const sourceCount = Object.keys(firebaseInstances).filter(id => firebaseInstances[id].connected).length;
+    const sourceCount = Object.keys(firebaseInstances).filter(id => firebaseInstances[id] && firebaseInstances[id].connected).length;
 
     document.getElementById('onlineCount').textContent = onlineCount;
     document.getElementById('totalCount').textContent = totalCount;
     document.getElementById('sourceCount').textContent = sourceCount;
 }
 
-/**
- * Apply filter to devices
- */
 function applyFilter(filter) {
     currentFilter = filter || currentFilter;
-
     let filtered = [...displayedDevices];
 
     if (currentFilter === 'online') {
@@ -58,24 +48,54 @@ function applyFilter(filter) {
     renderDeviceCards(filtered);
 }
 
-/**
- * Render device cards
- */
 function renderDeviceCards(devices) {
     const grid = document.getElementById('devicesGrid');
     
     if (!grid) return;
 
+    const sourceCount = Object.keys(firebaseInstances).filter(id => firebaseInstances[id] && firebaseInstances[id].connected).length;
+    const configs = loadFirebaseConfigs();
+    const totalSources = configs.sources ? configs.sources.length : 0;
+
     if (devices.length === 0) {
+        let message = '';
+        let icon = '📭';
+        let details = '';
+
+        if (totalSources === 0) {
+            icon = '🔌';
+            message = 'No Firebase Connected';
+            details = 'Go to Admin Panel (⚙️) and add a Firebase source';
+        } else if (sourceCount === 0) {
+            icon = '❌';
+            message = 'Firebase Connection Failed';
+            details = 'Check your Firebase URL and Key in Admin Panel';
+        } else if (sourceCount > 0) {
+            icon = '📭';
+            message = 'No Devices Found';
+            details = `Connected to ${sourceCount} Firebase source(s) but no devices in "users" collection`;
+        } else {
+            icon = '⚠️';
+            message = 'No Devices Found';
+            details = 'Add devices to your Firebase "users" collection';
+        }
+
         grid.innerHTML = `
             <div class="card" style="text-align:center; padding:40px 20px;">
-                <div style="font-size:48px; margin-bottom:12px;">📭</div>
-                <div style="font-size:16px; font-weight:500; color:var(--tg-theme-text-color,#000);">
-                    No devices found
+                <div style="font-size:48px; margin-bottom:12px;">${icon}</div>
+                <div style="font-size:18px; font-weight:600; color:var(--tg-theme-text-color,#000); margin-bottom:8px;">
+                    ${message}
                 </div>
-                <div style="font-size:14px; color:var(--tg-theme-hint-color,#999); margin-top:4px;">
-                    ${currentFilter === 'all' ? 'No devices connected yet' : `No ${currentFilter} devices`}
+                <div style="font-size:14px; color:var(--tg-theme-hint-color,#999);">
+                    ${details}
                 </div>
+                <div style="margin-top:12px; font-size:12px; color:var(--tg-theme-hint-color,#999);">
+                    Sources: ${sourceCount}/${totalSources} connected
+                    ${sourceCount > 0 ? ` | Devices in DB: ${allDevices.length}` : ''}
+                </div>
+                <button onclick="refreshDashboard()" class="btn btn-primary" style="margin-top:16px;">
+                    🔄 Refresh
+                </button>
             </div>
         `;
         return;
@@ -127,18 +147,13 @@ function renderDeviceCards(devices) {
 // FILTER HANDLING
 // ────────────────────────────────────────────────
 
-/**
- * Set up filter tabs
- */
 function setupFilters() {
     const tabs = document.querySelectorAll('.filter-tab');
     tabs.forEach(tab => {
         tab.addEventListener('click', function() {
             const filter = this.dataset.filter;
-            // Update active tab
             tabs.forEach(t => t.classList.remove('active'));
             this.classList.add('active');
-            // Apply filter
             applyFilter(filter);
             hapticFeedback('light');
         });
@@ -149,18 +164,26 @@ function setupFilters() {
 // REFRESH
 // ────────────────────────────────────────────────
 
-/**
- * Refresh dashboard data
- */
 async function refreshDashboard() {
     showLoading('Refreshing devices...');
     try {
+        await initFirebaseConnections();
         await fetchAllDevices();
         renderDashboard(allDevices);
-        showTelegramAlert('✅ Dashboard refreshed successfully');
+        
+        const count = allDevices.length;
+        const sources = Object.keys(firebaseInstances).filter(id => firebaseInstances[id] && firebaseInstances[id].connected).length;
+        
+        if (count === 0 && sources === 0) {
+            showTelegramAlert('ℹ️ No Firebase sources configured. Add one in Admin Panel (⚙️)');
+        } else if (count === 0 && sources > 0) {
+            showTelegramAlert(`ℹ️ Connected to ${sources} Firebase source(s) but no devices found. Add devices to your "users" collection.`);
+        } else {
+            showTelegramAlert(`✅ Found ${count} devices from ${sources} source(s)`);
+        }
     } catch (error) {
         console.error('Error refreshing dashboard:', error);
-        showTelegramAlert('❌ Failed to refresh dashboard');
+        showTelegramAlert(`❌ Failed to refresh: ${error.message || 'Unknown error'}`);
     } finally {
         hideLoading();
     }
@@ -170,9 +193,6 @@ async function refreshDashboard() {
 // LOADING INDICATOR
 // ────────────────────────────────────────────────
 
-/**
- * Show loading overlay
- */
 function showLoading(text) {
     const overlay = document.getElementById('loadingOverlay');
     const loadingText = document.getElementById('loadingText');
@@ -184,9 +204,6 @@ function showLoading(text) {
     }
 }
 
-/**
- * Hide loading overlay
- */
 function hideLoading() {
     const overlay = document.getElementById('loadingOverlay');
     if (overlay) {
@@ -198,57 +215,56 @@ function hideLoading() {
 // NAVIGATION
 // ────────────────────────────────────────────────
 
-/**
- * Show dashboard view
- */
-function showDashboard() {
+async function showDashboard() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('dashboardView').classList.remove('hidden');
     document.getElementById('deviceDetailView').classList.remove('active');
     document.getElementById('deviceDetailView').classList.add('hidden');
     
-    // Update admin button visibility
-    updateAdminButtonVisibility();
-    
-    // Load dashboard data
-    loadDashboardData();
+    await updateAdminButtonVisibility();
+    await loadDashboardData();
 }
 
-/**
- * Load dashboard data
- */
 async function loadDashboardData() {
-    showLoading('Loading dashboard...');
+    showLoading('Connecting to Firebase...');
     try {
-        // Initialize Firebase connections
-        await initFirebaseConnections();
+        await loadFirebaseConfigsFromFile();
+        const connected = await initFirebaseConnections();
         
-        // Fetch devices
+        if (!connected) {
+            showLoading('No Firebase connected...');
+            setTimeout(() => {
+                hideLoading();
+                renderDashboard([]);
+                showTelegramAlert('ℹ️ No Firebase sources connected. Add one in Admin Panel (⚙️)');
+            }, 1000);
+            return;
+        }
+        
+        showLoading('Fetching devices...');
         await fetchAllDevices();
-        
-        // Render dashboard
         renderDashboard(allDevices);
         
-        // Set up real-time listeners
         listenToDevices((devices) => {
             renderDashboard(devices);
         });
         
+        const count = allDevices.length;
+        const sources = Object.keys(firebaseInstances).filter(id => firebaseInstances[id] && firebaseInstances[id].connected).length;
+        
+        if (count === 0 && sources > 0) {
+            showTelegramAlert(`ℹ️ Connected to ${sources} Firebase source(s) but no devices found.`);
+        }
+        
     } catch (error) {
         console.error('Error loading dashboard:', error);
-        showTelegramAlert('❌ Failed to load dashboard data');
+        showTelegramAlert(`❌ Failed to load dashboard: ${error.message || 'Unknown error'}`);
+        renderDashboard([]);
     } finally {
         hideLoading();
     }
 }
 
-// ────────────────────────────────────────────────
-// DEVICE DETAIL NAVIGATION
-// ────────────────────────────────────────────────
-
-/**
- * Open device detail view
- */
 function openDeviceDetail(deviceId, sourceId) {
     const device = allDevices.find(d => d.id === deviceId && d.sourceId === sourceId);
     if (!device) {
@@ -256,16 +272,13 @@ function openDeviceDetail(deviceId, sourceId) {
         return;
     }
     
-    // Store current device in global for detail view
     window.currentDeviceDetail = device;
     window.currentDeviceSourceId = sourceId;
     
-    // Switch to detail view
     document.getElementById('dashboardView').classList.add('hidden');
     document.getElementById('deviceDetailView').classList.remove('hidden');
     document.getElementById('deviceDetailView').classList.add('active');
     
-    // Initialize detail view
     if (window.initDeviceDetail) {
         window.initDeviceDetail(device, sourceId);
     }
