@@ -27,9 +27,9 @@ async function loadFirebaseConfigsFromFile() {
         if (response.ok) {
             const data = await response.json();
             firebaseConfigsCache = data;
-            // Save to localStorage for backup
             localStorage.setItem('firebase_configs', JSON.stringify(data));
             console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
+            console.log('📢 Sources:', data.sources);
             return data;
         } else {
             console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
@@ -117,9 +117,10 @@ function removeFirebaseSource(sourceId) {
  */
 async function initFirebaseConnections() {
     try {
-        // Load configs directly from JSON file
+        // Load configs directly from JSON file - AWAIT THE RESULT
         const configs = await loadFirebaseConfigsFromFile();
         console.log('📢 Firebase configs loaded:', configs);
+        console.log('📢 Sources count:', configs.sources ? configs.sources.length : 0);
         
         if (!configs || !configs.sources || configs.sources.length === 0) {
             console.log('📢 No Firebase sources configured');
