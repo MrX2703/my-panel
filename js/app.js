@@ -10,6 +10,9 @@
 async function initApp() {
     console.log('🚀 Initializing SMS Dashboard...');
 
+    // Load Firebase configs from JSON file
+    await loadFirebaseConfigs();
+
     // Set up Telegram WebApp
     setupTelegramApp();
 
@@ -30,6 +33,9 @@ async function initApp() {
     console.log('✅ App initialized');
 }
 
+/**
+ * Set up Telegram WebApp
+ */
 function setupTelegramApp() {
     try {
         const tg = window.Telegram?.WebApp;
@@ -82,6 +88,7 @@ async function showDashboard() {
 // ────────────────────────────────────────────────
 
 function setupEventListeners() {
+    // ── Login ──
     const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) {
         loginBtn.addEventListener('click', handleLogin);
@@ -96,6 +103,7 @@ function setupEventListeners() {
         });
     }
 
+    // ── Admin Panel ──
     const adminLoginBtn = document.getElementById('adminLoginBtn');
     if (adminLoginBtn) {
         adminLoginBtn.addEventListener('click', async function() {
@@ -120,35 +128,43 @@ function setupEventListeners() {
         });
     }
 
+    // ── Admin Modal ──
     document.getElementById('closeAdminModal')?.addEventListener('click', closeAdminPanel);
     document.getElementById('closeAdminModalBtn')?.addEventListener('click', closeAdminPanel);
 
+    // ── Generate Key Modal ──
     document.getElementById('generateKeyBtn')?.addEventListener('click', showGenerateKeyModal);
     document.getElementById('cancelKeyBtn')?.addEventListener('click', closeGenerateKeyModal);
     document.getElementById('saveKeyBtn')?.addEventListener('click', saveNewKey);
 
+    // ── Add Firebase Modal ──
     document.getElementById('addFirebaseBtn')?.addEventListener('click', showAddFirebaseModal);
     document.getElementById('cancelFirebaseBtn')?.addEventListener('click', closeAddFirebaseModal);
 
+    // ── Confirm Modal ──
     document.getElementById('confirmDeleteBtn')?.addEventListener('click', executeDelete);
     document.getElementById('cancelConfirmBtn')?.addEventListener('click', closeConfirmModal);
 
+    // ── Refresh ──
     document.getElementById('refreshBtn')?.addEventListener('click', function() {
         if (typeof refreshDashboard === 'function') {
             refreshDashboard();
         }
     });
 
+    // ── Back to Dashboard ──
     document.getElementById('detailBackBtn')?.addEventListener('click', function() {
         if (typeof goBackToDashboard === 'function') {
             goBackToDashboard();
         }
     });
 
+    // ── Filters ──
     if (typeof setupFilters === 'function') {
         setupFilters();
     }
 
+    // ── Close modals on overlay click ──
     document.querySelectorAll('.modal-overlay').forEach(overlay => {
         overlay.addEventListener('click', function(e) {
             if (e.target === this) {
@@ -180,7 +196,7 @@ async function handleLogin() {
     }
 
     const success = await loginWithKey(key);
-    
+
     if (success) {
         input.value = '';
         showDashboard();
