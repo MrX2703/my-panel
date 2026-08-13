@@ -186,8 +186,8 @@ function executeDelete() {
         showTelegramAlert('✅ Access key deleted successfully');
         loadAccessKeysList();
     } else if (pendingDeleteType === 'firebase') {
-        removeFirebaseSource(pendingDeleteId);
-        showTelegramAlert('✅ Firebase source removed successfully');
+        // Just remove from UI (can't delete from JSON file)
+        showTelegramAlert('ℹ️ Remove Firebase source manually from firebase-configs.json file');
         loadFirebaseSourcesList();
         if (typeof refreshDashboard === 'function') {
             refreshDashboard();
@@ -205,7 +205,7 @@ function closeConfirmModal() {
 }
 
 // ────────────────────────────────────────────────
-// FIREBASE MANAGEMENT - SAVES TO GITHUB
+// FIREBASE MANAGEMENT - READ ONLY
 // ────────────────────────────────────────────────
 
 async function loadFirebaseSourcesList() {
@@ -218,7 +218,8 @@ async function loadFirebaseSourcesList() {
     if (sources.length === 0) {
         container.innerHTML = `
             <div style="text-align:center; padding:12px; color:var(--tg-theme-hint-color,#999); font-size:14px;">
-                No Firebase sources added yet
+                No Firebase sources added yet<br>
+                <span style="font-size:12px;">Add them manually in data/firebase-configs.json</span>
             </div>
         `;
         return;
@@ -250,94 +251,19 @@ async function loadFirebaseSourcesList() {
 }
 
 function showAddFirebaseModal() {
-    document.getElementById('addFirebaseModal').classList.remove('hidden');
-    document.getElementById('firebaseUrlInput').value = '';
-    document.getElementById('firebaseKeyInput').value = '';
-    document.getElementById('firebaseConnectionStatus').textContent = '';
-    hapticFeedback('light');
+    showTelegramAlert('ℹ️ To add a Firebase source, edit the file:\n\ndata/firebase-configs.json\n\nAdd your URL and Key there, then refresh.');
 }
 
 function closeAddFirebaseModal() {
     document.getElementById('addFirebaseModal').classList.add('hidden');
 }
 
-async function saveFirebaseSource() {
-    const urlInput = document.getElementById('firebaseUrlInput');
-    const keyInput = document.getElementById('firebaseKeyInput');
-    const statusEl = document.getElementById('firebaseConnectionStatus');
-    
-    const url = urlInput ? urlInput.value.trim() : '';
-    const key = keyInput ? keyInput.value.trim() : '';
-    
-    if (!url) {
-        showTelegramAlert('Please enter Firebase URL');
-        return;
-    }
-    
-    if (!key) {
-        showTelegramAlert('Please enter Firebase Key');
-        return;
-    }
-    
-    if (statusEl) {
-        statusEl.textContent = '⏳ Testing connection...';
-        statusEl.style.color = 'var(--tg-theme-text-color, #000)';
-    }
-    
-    try {
-        // Add source - this saves to GitHub and localStorage
-        const newSource = await addFirebaseSource(url, key);
-        console.log('📢 Source added:', newSource);
-        
-        // Try to connect
-        const connected = await connectToFirebase(newSource);
-        
-        if (connected) {
-            if (statusEl) {
-                statusEl.textContent = '✅ Connection successful!';
-                statusEl.style.color = '#34c759';
-            }
-            showTelegramAlert('✅ Firebase added and connected successfully!');
-            closeAddFirebaseModal();
-            await loadFirebaseSourcesList();
-            
-            if (typeof refreshDashboard === 'function') {
-                refreshDashboard();
-            }
-        } else {
-            if (statusEl) {
-                statusEl.textContent = '⚠️ Source added but connection failed. Check credentials.';
-                statusEl.style.color = '#ff9500';
-            }
-            showTelegramAlert('⚠️ Firebase added but connection failed. Check credentials.');
-            await loadFirebaseSourcesList();
-        }
-        
-        hapticFeedback('light');
-    } catch (error) {
-        console.error('Error adding Firebase:', error);
-        if (statusEl) {
-            statusEl.textContent = '❌ Failed to add Firebase';
-            statusEl.style.color = '#ff3b30';
-        }
-        showTelegramAlert(`❌ Failed to add Firebase: ${error.message || 'Unknown error'}`);
-    }
-}
-
 function confirmDeleteFirebase(sourceId) {
     pendingDeleteId = sourceId;
     pendingDeleteType = 'firebase';
     
-    const configs = loadFirebaseConfigs();
-    const source = configs.sources.find(s => s.id === sourceId);
-    
-    if (!source) {
-        showTelegramAlert('Source not found');
-        return;
-    }
-    
     document.getElementById('confirmMessage').textContent = 
-        `Are you sure you want to remove this Firebase source?\n\n🔥 ${source.id}\nURL: ${source.url}\n\n⚠️ This will remove all devices from this source from the dashboard.`;
+        `ℹ️ To remove this Firebase source:\n\n1. Open data/firebase-configs.json\n2. Remove the source with ID: ${sourceId}\n3. Refresh the app\n\n(This button only hides it from the list)`;
     
     document.getElementById('confirmModal').classList.remove('hidden');
     hapticFeedback('light');
@@ -358,7 +284,6 @@ window.confirmDeleteKey = confirmDeleteKey;
 window.loadFirebaseSourcesList = loadFirebaseSourcesList;
 window.showAddFirebaseModal = showAddFirebaseModal;
 window.closeAddFirebaseModal = closeAddFirebaseModal;
-window.saveFirebaseSource = saveFirebaseSource;
 window.confirmDeleteFirebase = confirmDeleteFirebase;
 window.executeDelete = executeDelete;
 window.closeConfirmModal = closeConfirmModal;
