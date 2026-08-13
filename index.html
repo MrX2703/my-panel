@@ -114,11 +114,10 @@
             </div>
         </div>
 
-        <!-- Detail Tabs -->
+        <!-- Detail Tabs - Send tab removed -->
         <div class="detail-tabs">
             <button class="detail-tab active" data-tab="info">ℹ️ Info</button>
             <button class="detail-tab" data-tab="sms">💬 SMS</button>
-            <button class="detail-tab" data-tab="send">✉️ Send</button>
         </div>
 
         <!-- Tab: Info -->
@@ -146,31 +145,6 @@
                 <div id="smsFeed" class="sms-feed">
                     <!-- Populated by JavaScript -->
                 </div>
-            </div>
-        </div>
-
-        <!-- Tab: Send -->
-        <div class="detail-content" id="sendTab">
-            <div class="card">
-                <h3 style="margin-bottom:12px;">✉️ Send SMS</h3>
-                <div class="input-group">
-                    <label>Send From:</label>
-                    <select id="sendSimSelector">
-                        <!-- Populated by JavaScript -->
-                    </select>
-                </div>
-                <div class="input-group">
-                    <label>To Number:</label>
-                    <input type="text" id="sendToNumber" placeholder="Enter receiver number..." />
-                </div>
-                <div class="input-group">
-                    <label>Message:</label>
-                    <textarea id="sendMessage" placeholder="Type your message..." rows="3"></textarea>
-                    <div style="text-align:right; font-size:12px; color:var(--tg-theme-hint-color,#999); margin-top:4px;">
-                        <span id="charCount">0</span>/160 characters
-                    </div>
-                </div>
-                <button id="sendSmsBtn" class="btn btn-primary" style="width:100%;">📤 Send SMS</button>
             </div>
         </div>
     </div>
@@ -287,32 +261,13 @@
         </div>
     </div>
 
-    <!-- ============================================ -->
-    <!-- JAVASCRIPT FILES                           -->
-    <!-- ============================================ -->
-    
-    <!-- Configuration -->
+    <!-- JavaScript Files -->
     <script src="js/config.js?v=final"></script>
-    
-    <!-- GitHub API Integration -->
-    <script src="js/githubConfig.js?v=final"></script>
-    
-    <!-- Firebase Manager -->
     <script src="js/firebaseManager.js?v=final"></script>
-    
-    <!-- Authentication -->
     <script src="js/auth.js?v=final"></script>
-    
-    <!-- Dashboard -->
     <script src="js/dashboard.js?v=final"></script>
-    
-    <!-- Device Detail -->
     <script src="js/deviceDetail.js?v=final"></script>
-    
-    <!-- Admin Panel -->
     <script src="js/admin.js?v=final"></script>
-    
-    <!-- Main App -->
     <script src="js/app.js?v=final"></script>
 
 </body>
