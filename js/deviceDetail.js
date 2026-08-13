@@ -153,7 +153,7 @@ function loadInfoTab(device) {
 }
 
 // ────────────────────────────────────────────────
-// SMS TAB - WITH TIME DISPLAY FIX
+// SMS TAB
 // ────────────────────────────────────────────────
 
 async function loadSmsTab(device) {
@@ -199,9 +199,10 @@ async function loadSmsTab(device) {
     }
 }
 
-/**
- * Render SMS messages with proper time display
- */
+// ────────────────────────────────────────────────
+// RENDER SMS MESSAGES - WITH TIME PARSING
+// ────────────────────────────────────────────────
+
 function renderSmsMessages(messages) {
     const feed = document.getElementById('smsFeed');
     if (!feed) return;
@@ -219,19 +220,122 @@ function renderSmsMessages(messages) {
     const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
 
     feed.innerHTML = displayMessages.map((msg, index) => {
-        // timeAgo() now handles "06-08-2026 | 10:19 pm" format via parseDate()
+        // ============================================
+        // DIRECT TIME PARSING
+        // ============================================
         let timeDisplay = 'N/A';
+        
         if (msg.time) {
-            timeDisplay = timeAgo(msg.time);
+            let dateObj = null;
+            
+            // Try to parse "06-08-2026 | 10:19 pm" format
+            if (typeof msg.time === 'string' && msg.time.includes('|')) {
+                const parts = msg.time.split('|');
+                if (parts.length === 2) {
+                    const datePart = parts[0].trim();
+                    const timePart = parts[1].trim();
+                    
+                    const dateParts = datePart.split('-');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0]);
+                        const month = parseInt(dateParts[1]) - 1;
+                        const year = parseInt(dateParts[2]);
+                        
+                        let hours = 0;
+                        let minutes = 0;
+                        
+                        const timeMatch = timePart.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+                        if (timeMatch) {
+                            hours = parseInt(timeMatch[1]);
+                            minutes = parseInt(timeMatch[2]);
+                            const ampm = timeMatch[3] ? timeMatch[3].toLowerCase() : '';
+                            
+                            if (ampm === 'pm' && hours < 12) hours += 12;
+                            if (ampm === 'am' && hours === 12) hours = 0;
+                        }
+                        
+                        dateObj = new Date(year, month, day, hours, minutes);
+                    }
+                }
+            }
+            
+            // If above failed, try standard Date parsing
+            if (!dateObj || isNaN(dateObj.getTime())) {
+                dateObj = new Date(msg.time);
+            }
+            
+            // If still invalid, try as timestamp
+            if (!dateObj || isNaN(dateObj.getTime())) {
+                const ts = parseInt(msg.time);
+                if (!isNaN(ts)) {
+                    dateObj = new Date(ts);
+                }
+            }
+            
+            // Calculate time ago
+            if (dateObj && !isNaN(dateObj.getTime())) {
+                const now = new Date();
+                const diffMs = now - dateObj;
+                const diffSec = Math.floor(diffMs / 1000);
+                const diffMin = Math.floor(diffSec / 60);
+                const diffHour = Math.floor(diffMin / 60);
+                const diffDay = Math.floor(diffHour / 24);
+
+                if (diffSec < 60) {
+                    timeDisplay = 'Just now';
+                } else if (diffMin < 60) {
+                    timeDisplay = `${diffMin}m ago`;
+                } else if (diffHour < 24) {
+                    timeDisplay = `${diffHour}h ago`;
+                } else if (diffDay < 7) {
+                    timeDisplay = `${diffDay}d ago`;
+                } else {
+                    timeDisplay = dateObj.toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                }
+            }
         }
         
         // Check if message is new (less than 1 hour old)
-        const isNew = msg.time && (() => {
-            const date = parseDate(msg.time);
-            if (!date) return false;
-            const diffMs = Date.now() - date.getTime();
-            return diffMs < 3600000; // less than 1 hour
-        })();
+        let isNew = false;
+        if (msg.time) {
+            let dateObj = null;
+            if (typeof msg.time === 'string' && msg.time.includes('|')) {
+                const parts = msg.time.split('|');
+                if (parts.length === 2) {
+                    const datePart = parts[0].trim();
+                    const timePart = parts[1].trim();
+                    const dateParts = datePart.split('-');
+                    if (dateParts.length === 3) {
+                        const day = parseInt(dateParts[0]);
+                        const month = parseInt(dateParts[1]) - 1;
+                        const year = parseInt(dateParts[2]);
+                        let hours = 0, minutes = 0;
+                        const timeMatch = timePart.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/i);
+                        if (timeMatch) {
+                            hours = parseInt(timeMatch[1]);
+                            minutes = parseInt(timeMatch[2]);
+                            const ampm = timeMatch[3] ? timeMatch[3].toLowerCase() : '';
+                            if (ampm === 'pm' && hours < 12) hours += 12;
+                            if (ampm === 'am' && hours === 12) hours = 0;
+                        }
+                        dateObj = new Date(year, month, day, hours, minutes);
+                    }
+                }
+            }
+            if (!dateObj || isNaN(dateObj.getTime())) {
+                dateObj = new Date(msg.time);
+            }
+            if (dateObj && !isNaN(dateObj.getTime())) {
+                const diffMs = Date.now() - dateObj.getTime();
+                isNew = diffMs < 3600000;
+            }
+        }
         
         return `
             <div class="sms-item ${isNew ? 'new' : ''}">
