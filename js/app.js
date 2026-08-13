@@ -13,6 +13,9 @@
 async function initApp() {
     console.log('🚀 Initializing SMS Dashboard...');
 
+    // Load Firebase configs from JSON file on startup
+    await loadFirebaseConfigsFromFile();
+
     // Set up Telegram WebApp
     setupTelegramApp();
 
