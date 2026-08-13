@@ -1,6 +1,6 @@
 /**
  * FIREBASE MANAGER
- * Handles Firebase connections, data fetching, and real-time updates
+ * Handles multiple Firebase connections, data fetching, and real-time updates
  */
 
 // ────────────────────────────────────────────────
@@ -12,144 +12,9 @@ let allDevices = [];
 let deviceListeners = {};
 let isInitialized = false;
 let firebaseConfigsCache = null;
-let mainFirebaseApp = null;
-let mainFirestore = null;
 
 // ────────────────────────────────────────────────
-// MAIN FIREBASE CONNECTION (FOR CONFIGS)
-// ────────────────────────────────────────────────
-
-/**
- * Initialize main Firebase connection for storing configs
- */
-async function initMainFirebase() {
-    try {
-        // Check if we already have configs in localStorage
-        const savedConfig = localStorage.getItem('main_firebase_config');
-        if (savedConfig) {
-            const config = JSON.parse(savedConfig);
-            if (config.url && config.key) {
-                console.log('📢 Using saved main Firebase config');
-                return await connectMainFirebase(config.url, config.key);
-            }
-        }
-        
-        // Try to load from firebase-configs.json first
-        const response = await fetch('data/firebase-configs.json');
-        if (response.ok) {
-            const data = await response.json();
-            if (data.mainFirebase && data.mainFirebase.url && data.mainFirebase.key) {
-                localStorage.setItem('main_firebase_config', JSON.stringify(data.mainFirebase));
-                console.log('📢 Main Firebase config loaded from JSON file');
-                return await connectMainFirebase(data.mainFirebase.url, data.mainFirebase.key);
-            }
-        }
-        
-        console.log('⚠️ No main Firebase config found');
-        return false;
-    } catch (error) {
-        console.error('❌ Error initializing main Firebase:', error);
-        return false;
-    }
-}
-
-/**
- * Connect to main Firebase (for storing configs)
- */
-async function connectMainFirebase(url, key) {
-    try {
-        const firebaseConfig = {
-            apiKey: key,
-            authDomain: url.replace('https://', '').replace('.firebaseio.com', '.firebaseapp.com'),
-            databaseURL: url,
-            projectId: url.replace('https://', '').replace('.firebaseio.com', ''),
-            storageBucket: url.replace('https://', '').replace('.firebaseio.com', '.appspot.com'),
-        };
-
-        // Check if app already exists
-        try {
-            mainFirebaseApp = firebase.app('main');
-            console.log('📢 Using existing main Firebase app');
-        } catch (e) {
-            mainFirebaseApp = firebase.initializeApp(firebaseConfig, 'main');
-            console.log('📢 Created new main Firebase app');
-        }
-
-        mainFirestore = firebase.firestore(mainFirebaseApp);
-        
-        // Test connection
-        await mainFirestore.collection('_test').limit(1).get();
-        
-        console.log('✅ Main Firebase connected successfully');
-        return true;
-    } catch (error) {
-        console.error('❌ Failed to connect main Firebase:', error);
-        return false;
-    }
-}
-
-// ────────────────────────────────────────────────
-// CONFIG STORAGE IN FIRESTORE
-// ────────────────────────────────────────────────
-
-/**
- * Save Firebase configs to Firestore
- */
-async function saveFirebaseConfigsToFirestore(configs) {
-    if (!mainFirestore) {
-        console.log('⚠️ Main Firestore not initialized, trying to init...');
-        await initMainFirebase();
-        if (!mainFirestore) {
-            console.error('❌ Cannot save configs: Main Firestore not available');
-            return false;
-        }
-    }
-    
-    try {
-        await mainFirestore.collection('app_config').doc('firebase_sources').set({
-            sources: configs.sources || [],
-            updatedAt: new Date().toISOString()
-        }, { merge: true });
-        
-        console.log('✅ Firebase configs saved to Firestore');
-        return true;
-    } catch (error) {
-        console.error('❌ Error saving configs to Firestore:', error);
-        return false;
-    }
-}
-
-/**
- * Load Firebase configs from Firestore
- */
-async function loadFirebaseConfigsFromFirestore() {
-    if (!mainFirestore) {
-        console.log('⚠️ Main Firestore not initialized, trying to init...');
-        await initMainFirebase();
-        if (!mainFirestore) {
-            console.log('📢 Main Firestore not available, using fallback');
-            return null;
-        }
-    }
-    
-    try {
-        const doc = await mainFirestore.collection('app_config').doc('firebase_sources').get();
-        if (doc.exists) {
-            const data = doc.data();
-            console.log('✅ Firebase configs loaded from Firestore:', data.sources ? data.sources.length : 0);
-            return data;
-        } else {
-            console.log('📢 No configs found in Firestore');
-            return null;
-        }
-    } catch (error) {
-        console.error('❌ Error loading configs from Firestore:', error);
-        return null;
-    }
-}
-
-// ────────────────────────────────────────────────
-// CONFIG LOADING - WITH FIRESTORE FALLBACK
+// CONFIG LOADING - FROM GITHUB
 // ────────────────────────────────────────────────
 
 function loadFirebaseConfigsFromStorage() {
@@ -177,16 +42,16 @@ async function loadFirebaseConfigs() {
             return firebaseConfigsCache;
         }
         
-        // Try Firestore first
-        const firestoreConfigs = await loadFirebaseConfigsFromFirestore();
-        if (firestoreConfigs && firestoreConfigs.sources && firestoreConfigs.sources.length > 0) {
-            firebaseConfigsCache = firestoreConfigs;
-            localStorage.setItem('firebase_configs', JSON.stringify(firestoreConfigs));
-            console.log('📢 Firebase configs loaded from Firestore:', firestoreConfigs.sources.length);
-            return firestoreConfigs;
+        // Try GitHub first
+        const githubConfigs = await loadFirebaseConfigsFromGitHub();
+        if (githubConfigs && githubConfigs.sources && githubConfigs.sources.length > 0) {
+            firebaseConfigsCache = githubConfigs;
+            localStorage.setItem('firebase_configs', JSON.stringify(githubConfigs));
+            console.log('📢 Firebase configs loaded from GitHub:', githubConfigs.sources.length);
+            return githubConfigs;
         }
         
-        // Then try localStorage
+        // Try localStorage
         const data = localStorage.getItem('firebase_configs');
         if (data) {
             const parsed = JSON.parse(data);
@@ -196,24 +61,24 @@ async function loadFirebaseConfigs() {
                 return parsed;
             }
         }
-    } catch (e) {
-        console.error('Error loading Firebase configs:', e);
-    }
-    
-    // Finally try JSON file
-    try {
-        const response = await fetch('data/firebase-configs.json');
-        if (response.ok) {
-            const data = await response.json();
-            if (data.sources && data.sources.length > 0) {
-                firebaseConfigsCache = data;
-                localStorage.setItem('firebase_configs', JSON.stringify(data));
-                console.log('📢 Firebase configs loaded from JSON file:', data.sources.length);
-                return data;
+        
+        // Try local JSON file (fallback)
+        try {
+            const response = await fetch('data/firebase-configs.json');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.sources && data.sources.length > 0) {
+                    firebaseConfigsCache = data;
+                    localStorage.setItem('firebase_configs', JSON.stringify(data));
+                    console.log('📢 Firebase configs loaded from JSON file:', data.sources.length);
+                    return data;
+                }
             }
+        } catch (e) {
+            console.log('⚠️ Could not load from JSON file:', e.message);
         }
     } catch (e) {
-        console.log('⚠️ Could not load from JSON file:', e.message);
+        console.error('Error loading Firebase configs:', e);
     }
     
     console.log('📢 No Firebase configs found');
@@ -244,13 +109,21 @@ async function addFirebaseSource(url, key) {
     };
     configs.sources.push(newSource);
     
-    // Save to Firestore
-    await saveFirebaseConfigsToFirestore(configs);
+    // Save to GitHub
+    const savedToGitHub = await saveFirebaseConfigsToGitHub(configs);
     
-    // Save to localStorage
+    // Save to localStorage (backup)
     saveFirebaseConfigsToLocal(configs);
     
-    console.log('📢 Firebase source added:', newSource.id);
+    if (savedToGitHub) {
+        console.log('📢 Firebase source added and saved to GitHub:', newSource.id);
+        showTelegramAlert('✅ Firebase source added and saved to GitHub!');
+    } else {
+        console.log('⚠️ Firebase source added but NOT saved to GitHub.');
+        showTelegramAlert('⚠️ Source added locally but GitHub save failed. Check your token.');
+    }
+    
+    console.log('📢 Total sources:', configs.sources.length);
     return newSource;
 }
 
@@ -258,14 +131,27 @@ async function removeFirebaseSource(sourceId) {
     const configs = await loadFirebaseConfigs();
     configs.sources = configs.sources.filter(s => s.id !== sourceId);
     
-    // Save to Firestore
-    await saveFirebaseConfigsToFirestore(configs);
+    // Save to GitHub
+    const savedToGitHub = await saveFirebaseConfigsToGitHub(configs);
     
-    // Save to localStorage
+    // Save to localStorage (backup)
     saveFirebaseConfigsToLocal(configs);
     
     disconnectFromFirebase(sourceId);
-    console.log('📢 Firebase source removed:', sourceId);
+    
+    if (savedToGitHub) {
+        console.log('📢 Firebase source removed from GitHub:', sourceId);
+        showTelegramAlert('✅ Firebase source removed from GitHub!');
+    } else {
+        console.log('⚠️ Firebase source removed locally but GitHub save failed.');
+    }
+    
+    console.log('📢 Remaining sources:', configs.sources.length);
+}
+
+async function getAllFirebaseSources() {
+    const configs = await loadFirebaseConfigs();
+    return configs.sources || [];
 }
 
 // ────────────────────────────────────────────────
@@ -274,9 +160,6 @@ async function removeFirebaseSource(sourceId) {
 
 async function initFirebaseConnections() {
     try {
-        // First init main Firebase for configs
-        await initMainFirebase();
-        
         loadFirebaseConfigsFromStorage();
         const configs = await loadFirebaseConfigs();
         console.log('📢 Firebase configs loaded:', configs);
@@ -286,6 +169,8 @@ async function initFirebaseConnections() {
             return false;
         }
 
+        console.log(`📢 Connecting to ${configs.sources.length} Firebase source(s)...`);
+        
         let successCount = 0;
         for (const source of configs.sources) {
             console.log(`📢 Connecting to Firebase: ${source.id}`);
@@ -417,7 +302,7 @@ async function fetchDevicesFromSource(sourceId) {
     }
 
     try {
-        console.log(`📢 Querying users collection...`);
+        console.log(`📢 Querying users collection from ${sourceId}...`);
         const snapshot = await instance.db.collection('users').get();
         const devices = [];
 
@@ -632,14 +517,12 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 // EXPOSE TO GLOBAL SCOPE
 // ────────────────────────────────────────────────
 
-window.initMainFirebase = initMainFirebase;
 window.loadFirebaseConfigs = loadFirebaseConfigs;
 window.loadFirebaseConfigsFromStorage = loadFirebaseConfigsFromStorage;
-window.loadFirebaseConfigsFromFirestore = loadFirebaseConfigsFromFirestore;
-window.saveFirebaseConfigsToFirestore = saveFirebaseConfigsToFirestore;
 window.saveFirebaseConfigsToLocal = saveFirebaseConfigsToLocal;
 window.addFirebaseSource = addFirebaseSource;
 window.removeFirebaseSource = removeFirebaseSource;
+window.getAllFirebaseSources = getAllFirebaseSources;
 window.initFirebaseConnections = initFirebaseConnections;
 window.connectToFirebase = connectToFirebase;
 window.disconnectFromFirebase = disconnectFromFirebase;
