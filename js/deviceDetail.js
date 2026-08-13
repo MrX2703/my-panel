@@ -17,36 +17,19 @@ let currentTab = 'info';
 // INITIALIZATION
 // ────────────────────────────────────────────────
 
-/**
- * Initialize device detail view
- */
 function initDeviceDetail(device, sourceId) {
     currentDevice = device;
     currentSourceId = sourceId;
     currentSim = device.sims && device.sims.length > 0 ? device.sims[0] : null;
 
-    // Update header
     updateDetailHeader(device);
-
-    // Populate SIM selectors
     populateSimSelectors(device);
-
-    // Load info tab
     loadInfoTab(device);
-
-    // Load SMS tab (default)
     loadSmsTab(device);
-
-    // Set up tab switching
     setupDetailTabs();
-
-    // Set up send SMS
     setupSendSms(device);
 }
 
-/**
- * Update detail header
- */
 function updateDetailHeader(device) {
     document.getElementById('detailDeviceName').textContent = `📱 ${device.name}`;
 
@@ -59,9 +42,6 @@ function updateDetailHeader(device) {
     document.getElementById('detailDeviceLastSeen').textContent = `🕐 ${timeAgo(device.lastSeen)}`;
 }
 
-/**
- * Populate SIM selectors
- */
 function populateSimSelectors(device) {
     const sims = device.sims || [device.number || 'N/A'];
     const selectors = ['smsSimSelector', 'sendSimSelector'];
@@ -77,11 +57,9 @@ function populateSimSelectors(device) {
         `).join('');
     });
 
-    // Set current SIM
     const smsSelector = document.getElementById('smsSimSelector');
     if (smsSelector) {
         currentSim = smsSelector.value;
-        // Listen for SIM change
         smsSelector.addEventListener('change', function() {
             currentSim = this.value;
             loadSmsTab(currentDevice);
@@ -93,9 +71,6 @@ function populateSimSelectors(device) {
 // TAB MANAGEMENT
 // ────────────────────────────────────────────────
 
-/**
- * Set up detail tabs
- */
 function setupDetailTabs() {
     const tabs = document.querySelectorAll('.detail-tab');
     tabs.forEach(tab => {
@@ -106,23 +81,17 @@ function setupDetailTabs() {
     });
 }
 
-/**
- * Switch to a specific tab
- */
 function switchTab(tabName) {
     currentTab = tabName;
 
-    // Update tab buttons
     document.querySelectorAll('.detail-tab').forEach(t => {
         t.classList.toggle('active', t.dataset.tab === tabName);
     });
 
-    // Update tab content
     document.querySelectorAll('.detail-content').forEach(c => {
         c.classList.toggle('active', c.id === tabName + 'Tab');
     });
 
-    // Load tab content if needed
     if (tabName === 'sms') {
         loadSmsTab(currentDevice);
     } else if (tabName === 'info') {
@@ -136,9 +105,6 @@ function switchTab(tabName) {
 // INFO TAB
 // ────────────────────────────────────────────────
 
-/**
- * Load info tab
- */
 function loadInfoTab(device) {
     const container = document.getElementById('detailInfoContent');
     if (!container) return;
@@ -187,31 +153,24 @@ function loadInfoTab(device) {
 }
 
 // ────────────────────────────────────────────────
-// SMS TAB
+// SMS TAB - UPDATED FOR YOUR DATA
 // ────────────────────────────────────────────────
 
-/**
- * Load SMS tab
- */
 async function loadSmsTab(device) {
     const feed = document.getElementById('smsFeed');
     if (!feed) return;
 
-    // Show loading
     feed.innerHTML = '<div class="sms-empty">Loading messages...</div>';
 
     try {
-        // Unsubscribe from previous listener
         if (smsUnsubscribe) {
             smsUnsubscribe();
             smsUnsubscribe = null;
         }
 
-        // Get current SIM
         const simSelector = document.getElementById('smsSimSelector');
         const selectedSim = simSelector ? simSelector.value : (device.sims ? device.sims[0] : null);
 
-        // Set up real-time listener
         smsUnsubscribe = listenToSms(
             device.id,
             currentSourceId,
@@ -221,14 +180,12 @@ async function loadSmsTab(device) {
             }
         );
 
-        // Also fetch initial messages
         const messages = await fetchSmsForDevice(device.id, currentSourceId, selectedSim, APP_CONFIG.maxSmsDisplay);
         renderSmsMessages(messages);
 
-        // Update count
         const countEl = document.getElementById('smsCount');
         if (countEl) {
-            countEl.textContent = `📊 Showing latest ${Math.min(messages.length, APP_CONFIG.maxSmsDisplay)} messages`;
+            countEl.textContent = `📊 Showing ${Math.min(messages.length, APP_CONFIG.maxSmsDisplay)} message(s)`;
         }
 
     } catch (error) {
@@ -242,9 +199,6 @@ async function loadSmsTab(device) {
     }
 }
 
-/**
- * Render SMS messages
- */
 function renderSmsMessages(messages) {
     const feed = document.getElementById('smsFeed');
     if (!feed) return;
@@ -253,167 +207,4 @@ function renderSmsMessages(messages) {
         feed.innerHTML = `
             <div class="sms-empty">
                 📭 No messages found<br>
-                <span style="font-size:12px;">Messages will appear here when received</span>
-            </div>
-        `;
-        return;
-    }
-
-    // Take only latest 100
-    const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
-
-    feed.innerHTML = displayMessages.map((msg, index) => `
-        <div class="sms-item ${index === 0 ? 'new' : ''}">
-            <div class="sms-header">
-                <span class="sms-sender">📨 ${msg.sender}</span>
-                <span class="sms-time">${timeAgo(msg.time)}</span>
-            </div>
-            <div class="sms-body">${msg.body}</div>
-        </div>
-    `).join('');
-
-    // Auto-scroll to top (newest messages)
-    feed.scrollTop = 0;
-}
-
-// ────────────────────────────────────────────────
-// SEND TAB
-// ────────────────────────────────────────────────
-
-/**
- * Set up send SMS
- */
-function setupSendSms(device) {
-    const sendBtn = document.getElementById('sendSmsBtn');
-    const messageInput = document.getElementById('sendMessage');
-    const charCount = document.getElementById('charCount');
-
-    if (!sendBtn || !messageInput) return;
-
-    // Character count
-    messageInput.addEventListener('input', function() {
-        const count = this.value.length;
-        if (charCount) {
-            charCount.textContent = count;
-        }
-    });
-
-    // Send button
-    sendBtn.addEventListener('click', function() {
-        sendSmsMessage(device);
-    });
-
-    // Enter key support
-    messageInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendSmsMessage(device);
-        }
-    });
-}
-
-/**
- * Send SMS message
- */
-async function sendSmsMessage(device) {
-    const simSelector = document.getElementById('sendSimSelector');
-    const toInput = document.getElementById('sendToNumber');
-    const messageInput = document.getElementById('sendMessage');
-
-    const selectedSim = simSelector ? simSelector.value : (device.sims ? device.sims[0] : null);
-    const toNumber = toInput ? toInput.value.trim() : '';
-    const message = messageInput ? messageInput.value.trim() : '';
-
-    // Validation
-    if (!toNumber) {
-        showTelegramAlert('Please enter a receiver number');
-        return;
-    }
-
-    if (!message) {
-        showTelegramAlert('Please enter a message');
-        return;
-    }
-
-    if (message.length > 160) {
-        showTelegramAlert('Message exceeds 160 characters');
-        return;
-    }
-
-    // Confirm before sending
-    showTelegramConfirm(`Send SMS to ${toNumber}?\n\nFrom: ${selectedSim}\nMessage: ${message}`, async (confirmed) => {
-        if (!confirmed) return;
-
-        // Show loading
-        showLoading('Sending SMS...');
-
-        try {
-            const result = await sendSms(
-                device.id,
-                currentSourceId,
-                selectedSim,
-                toNumber,
-                message
-            );
-
-            if (result.success) {
-                // Clear inputs
-                if (toInput) toInput.value = '';
-                if (messageInput) messageInput.value = '';
-                if (document.getElementById('charCount')) {
-                    document.getElementById('charCount').textContent = '0';
-                }
-
-                showTelegramAlert('✅ SMS sent successfully!');
-                hapticFeedback('light');
-
-                // Switch to SMS tab to see the sent message
-                switchTab('sms');
-            }
-        } catch (error) {
-            console.error('Error sending SMS:', error);
-            showTelegramAlert(`❌ Failed to send SMS: ${error.message || 'Unknown error'}`);
-        } finally {
-            hideLoading();
-        }
-    });
-}
-
-// ────────────────────────────────────────────────
-// BACK NAVIGATION
-// ────────────────────────────────────────────────
-
-/**
- * Go back to dashboard
- */
-function goBackToDashboard() {
-    // Unsubscribe from SMS listener
-    if (smsUnsubscribe) {
-        smsUnsubscribe();
-        smsUnsubscribe = null;
-    }
-
-    document.getElementById('deviceDetailView').classList.remove('active');
-    document.getElementById('deviceDetailView').classList.add('hidden');
-    document.getElementById('dashboardView').classList.remove('hidden');
-
-    currentDevice = null;
-    currentSourceId = null;
-    currentSim = null;
-}
-
-// ────────────────────────────────────────────────
-// EXPOSE TO GLOBAL SCOPE
-// ────────────────────────────────────────────────
-
-window.initDeviceDetail = initDeviceDetail;
-window.updateDetailHeader = updateDetailHeader;
-window.populateSimSelectors = populateSimSelectors;
-window.setupDetailTabs = setupDetailTabs;
-window.switchTab = switchTab;
-window.loadInfoTab = loadInfoTab;
-window.loadSmsTab = loadSmsTab;
-window.renderSmsMessages = renderSmsMessages;
-window.setupSendSms = setupSendSms;
-window.sendSmsMessage = sendSmsMessage;
-window.goBackToDashboard = goBackToDashboard;
+                <span style="font-size:12px;">Messages will appear here when received</
