@@ -8,44 +8,30 @@
 // ────────────────────────────────────────────────
 
 let pendingDeleteId = null;
-let pendingDeleteType = null; // 'key' or 'firebase'
+let pendingDeleteType = null;
 
 // ────────────────────────────────────────────────
 // ADMIN PANEL
 // ────────────────────────────────────────────────
 
-/**
- * Open admin panel
- */
 async function openAdminPanel() {
-    // Check if user is admin
     const isUserAdmin = await isAdmin();
     if (!isUserAdmin) {
         showTelegramAlert('⛔ Access denied. Admin only.');
         return;
     }
 
-    // Show admin modal
     document.getElementById('adminModal').classList.remove('hidden');
-    
-    // Load data
     await loadAccessKeysList();
     await loadFirebaseSourcesList();
     updateAdminUserInfo();
-    
     hapticFeedback('light');
 }
 
-/**
- * Close admin panel
- */
 function closeAdminPanel() {
     document.getElementById('adminModal').classList.add('hidden');
 }
 
-/**
- * Update admin user info
- */
 function updateAdminUserInfo() {
     const userId = getTelegramUserId();
     const userName = getTelegramUserName();
@@ -59,9 +45,6 @@ function updateAdminUserInfo() {
 // ACCESS KEYS MANAGEMENT
 // ────────────────────────────────────────────────
 
-/**
- * Load and render access keys list
- */
 async function loadAccessKeysList() {
     const container = document.getElementById('accessKeysList');
     if (!container) return;
@@ -77,7 +60,6 @@ async function loadAccessKeysList() {
         return;
     }
 
-    // Sort: active first, then expired
     const sorted = [...keys].sort((a, b) => {
         const aActive = isKeyActive(a.expiresAt);
         const bActive = isKeyActive(b.expiresAt);
@@ -110,13 +92,9 @@ async function loadAccessKeysList() {
     }).join('');
 }
 
-/**
- * Show generate key modal
- */
 function showGenerateKeyModal() {
     document.getElementById('generateKeyModal').classList.remove('hidden');
     
-    // Set default expiry (30 days from now)
     const defaultDate = new Date();
     defaultDate.setDate(defaultDate.getDate() + 30);
     
@@ -132,22 +110,14 @@ function showGenerateKeyModal() {
         timeInput.value = '23:59';
     }
     
-    // Clear previous input
     document.getElementById('newKeyInput').value = '';
-    
     hapticFeedback('light');
 }
 
-/**
- * Close generate key modal
- */
 function closeGenerateKeyModal() {
     document.getElementById('generateKeyModal').classList.add('hidden');
 }
 
-/**
- * Save new access key
- */
 function saveNewKey() {
     const keyInput = document.getElementById('newKeyInput');
     const dateInput = document.getElementById('keyExpiryDate');
@@ -157,7 +127,6 @@ function saveNewKey() {
     const date = dateInput ? dateInput.value : '';
     const time = timeInput ? timeInput.value : '';
     
-    // Validate
     if (!key) {
         showTelegramAlert('Please enter an access key');
         return;
@@ -173,7 +142,6 @@ function saveNewKey() {
         return;
     }
     
-    // Build expiry datetime
     const expiryDateTime = new Date(`${date}T${time || '23:59'}:00`);
     if (isNaN(expiryDateTime.getTime())) {
         showTelegramAlert('Invalid expiry date/time');
@@ -197,9 +165,6 @@ function saveNewKey() {
     }
 }
 
-/**
- * Confirm delete access key
- */
 function confirmDeleteKey(keyId) {
     pendingDeleteId = keyId;
     pendingDeleteType = 'key';
@@ -219,9 +184,6 @@ function confirmDeleteKey(keyId) {
     hapticFeedback('light');
 }
 
-/**
- * Execute delete
- */
 function executeDelete() {
     if (pendingDeleteType === 'key') {
         deleteAccessKey(pendingDeleteId);
@@ -240,9 +202,6 @@ function executeDelete() {
     hapticFeedback('light');
 }
 
-/**
- * Close confirm modal
- */
 function closeConfirmModal() {
     document.getElementById('confirmModal').classList.add('hidden');
     pendingDeleteId = null;
@@ -250,17 +209,14 @@ function closeConfirmModal() {
 }
 
 // ────────────────────────────────────────────────
-// FIREBASE MANAGEMENT
+// FIREBASE MANAGEMENT - SAVES TO FIRESTORE
 // ────────────────────────────────────────────────
 
-/**
- * Load and render Firebase sources list
- */
 async function loadFirebaseSourcesList() {
     const container = document.getElementById('firebaseSourcesList');
     if (!container) return;
 
-    const configs = loadFirebaseConfigs();
+    const configs = await loadFirebaseConfigs();
     const sources = configs.sources || [];
 
     if (sources.length === 0) {
@@ -297,30 +253,18 @@ async function loadFirebaseSourcesList() {
     }).join('');
 }
 
-/**
- * Show add Firebase modal
- */
 function showAddFirebaseModal() {
     document.getElementById('addFirebaseModal').classList.remove('hidden');
-    
-    // Clear previous inputs
     document.getElementById('firebaseUrlInput').value = '';
     document.getElementById('firebaseKeyInput').value = '';
     document.getElementById('firebaseConnectionStatus').textContent = '';
-    
     hapticFeedback('light');
 }
 
-/**
- * Close add Firebase modal
- */
 function closeAddFirebaseModal() {
     document.getElementById('addFirebaseModal').classList.add('hidden');
 }
 
-/**
- * Save new Firebase source
- */
 async function saveFirebaseSource() {
     const urlInput = document.getElementById('firebaseUrlInput');
     const keyInput = document.getElementById('firebaseKeyInput');
@@ -329,7 +273,6 @@ async function saveFirebaseSource() {
     const url = urlInput ? urlInput.value.trim() : '';
     const key = keyInput ? keyInput.value.trim() : '';
     
-    // Validate
     if (!url) {
         showTelegramAlert('Please enter Firebase URL');
         return;
@@ -340,15 +283,15 @@ async function saveFirebaseSource() {
         return;
     }
     
-    // Test connection
     if (statusEl) {
         statusEl.textContent = '⏳ Testing connection...';
         statusEl.style.color = 'var(--tg-theme-text-color, #000)';
     }
     
     try {
-        // Add source (this saves to config)
-        const newSource = addFirebaseSource(url, key);
+        // Add source - this saves to Firestore and localStorage
+        const newSource = await addFirebaseSource(url, key);
+        console.log('📢 Source added:', newSource);
         
         // Try to connect
         const connected = await connectToFirebase(newSource);
@@ -360,7 +303,7 @@ async function saveFirebaseSource() {
             }
             showTelegramAlert('✅ Firebase added and connected successfully!');
             closeAddFirebaseModal();
-            loadFirebaseSourcesList();
+            await loadFirebaseSourcesList();
             
             if (typeof refreshDashboard === 'function') {
                 refreshDashboard();
@@ -371,7 +314,7 @@ async function saveFirebaseSource() {
                 statusEl.style.color = '#ff9500';
             }
             showTelegramAlert('⚠️ Firebase added but connection failed. Check credentials.');
-            loadFirebaseSourcesList();
+            await loadFirebaseSourcesList();
         }
         
         hapticFeedback('light');
@@ -385,9 +328,6 @@ async function saveFirebaseSource() {
     }
 }
 
-/**
- * Confirm delete Firebase source
- */
 function confirmDeleteFirebase(sourceId) {
     pendingDeleteId = sourceId;
     pendingDeleteType = 'firebase';
@@ -411,25 +351,18 @@ function confirmDeleteFirebase(sourceId) {
 // EXPOSE TO GLOBAL SCOPE
 // ────────────────────────────────────────────────
 
-// Admin panel
 window.openAdminPanel = openAdminPanel;
 window.closeAdminPanel = closeAdminPanel;
 window.updateAdminUserInfo = updateAdminUserInfo;
-
-// Access keys
 window.loadAccessKeysList = loadAccessKeysList;
 window.showGenerateKeyModal = showGenerateKeyModal;
 window.closeGenerateKeyModal = closeGenerateKeyModal;
 window.saveNewKey = saveNewKey;
 window.confirmDeleteKey = confirmDeleteKey;
-
-// Firebase
 window.loadFirebaseSourcesList = loadFirebaseSourcesList;
 window.showAddFirebaseModal = showAddFirebaseModal;
 window.closeAddFirebaseModal = closeAddFirebaseModal;
 window.saveFirebaseSource = saveFirebaseSource;
 window.confirmDeleteFirebase = confirmDeleteFirebase;
-
-// Confirm modal
 window.executeDelete = executeDelete;
 window.closeConfirmModal = closeConfirmModal;
