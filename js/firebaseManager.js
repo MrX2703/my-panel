@@ -1,6 +1,8 @@
 /**
  * FIREBASE MANAGER - Realtime Database
- * Reads devices from 'devices.json' and messages from 'messages/{deviceId}.json'
+ * NEW LOGIC: Device status based on latest message timestamp
+ * Online = latest message < 1 hour old
+ * Offline = latest message > 1 hour old OR no messages
  */
 
 // ────────────────────────────────────────────────
@@ -13,6 +15,7 @@ let deviceListeners = {};
 let isInitialized = false;
 let firebaseConfigsCache = null;
 let pollingIntervals = {};
+let deviceMessageCache = {}; // Cache latest message timestamp per device
 
 // ────────────────────────────────────────────────
 // CONFIG LOADING - FROM JSON FILE
@@ -156,79 +159,6 @@ async function fetchAllDevices() {
 }
 
 /**
- * Get device status - FIXED for your data
- * Your data has NO root status field
- * Status is inside webhookEvent.sendSms.status
- */
-function getDeviceStatus(deviceData) {
-    // ============================================
-    // CHECK 1: Root level status (if exists)
-    // ============================================
-    if (deviceData.status !== undefined) {
-        const statusValue = deviceData.status;
-        if (statusValue === true || statusValue === 'true' || statusValue === 'online') {
-            return 'online';
-        }
-        if (statusValue === false || statusValue === 'false' || statusValue === 'offline' || statusValue === null) {
-            return 'offline';
-        }
-        // If status is something else, treat as online
-        return 'online';
-    }
-    
-    // ============================================
-    // CHECK 2: webhookEvent.sendSms.status (YOUR DATA)
-    // ============================================
-    const webhookData = deviceData.webhookEvent?.sendSms || {};
-    if (webhookData.status) {
-        if (webhookData.status === 'pending' || webhookData.status === 'offline') {
-            return 'offline';
-        }
-        if (webhookData.status === 'sent' || webhookData.status === 'online') {
-            return 'online';
-        }
-        // If status is something else, treat as online
-        return 'online';
-    }
-    
-    // ============================================
-    // CHECK 3: command status
-    // ============================================
-    const cmdData = deviceData.command || deviceData.commands || {};
-    if (cmdData.status) {
-        if (cmdData.status === 'pending' || cmdData.status === 'offline') {
-            return 'offline';
-        }
-        if (cmdData.status === 'sent' || cmdData.status === 'online') {
-            return 'online';
-        }
-    }
-    
-    // ============================================
-    // CHECK 4: action.status
-    // ============================================
-    if (deviceData.action?.status) {
-        if (deviceData.action.status === 'pending' || deviceData.action.status === 'offline') {
-            return 'offline';
-        }
-        if (deviceData.action.status === 'sent' || deviceData.action.status === 'online') {
-            return 'online';
-        }
-    }
-    
-    // ============================================
-    // DEFAULT: Check if any pending message exists
-    // ============================================
-    // If there's a webhookEvent with pending status, device is offline
-    if (deviceData.webhookEvent?.sendSms) {
-        return 'offline';
-    }
-    
-    // Default to online
-    return 'online';
-}
-
-/**
  * Extract phone number from device data
  */
 function extractPhoneNumber(deviceData) {
@@ -258,6 +188,57 @@ function extractPhoneNumber(deviceData) {
     return 'N/A';
 }
 
+/**
+ * Get the latest message timestamp for a device
+ */
+async function getLatestMessageTimestamp(deviceId, instance) {
+    try {
+        const { url, key } = instance;
+        const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=1`;
+        
+        const response = await fetch(apiUrl);
+        if (!response.ok) return null;
+        
+        const data = await response.json();
+        if (!data) return null;
+        
+        // Get the latest message (it's the only one since limitToLast=1)
+        const messages = Object.values(data);
+        if (messages.length === 0) return null;
+        
+        const latestMsg = messages[0];
+        let timestamp = null;
+        
+        // Extract timestamp from various formats
+        if (latestMsg.timestamp) {
+            timestamp = latestMsg.timestamp;
+        } else if (latestMsg.id) {
+            timestamp = latestMsg.id;
+        } else if (latestMsg.dateTime) {
+            // Parse dateTime string like "06-08-2026 | 10:19 pm"
+            const dateMatch = latestMsg.dateTime.match(/(\d{2})-(\d{2})-(\d{4}) \| (\d{1,2}):(\d{2}) (am|pm)/i);
+            if (dateMatch) {
+                let hours = parseInt(dateMatch[4]);
+                const minutes = parseInt(dateMatch[5]);
+                const ampm = dateMatch[6].toLowerCase();
+                const day = parseInt(dateMatch[1]);
+                const month = parseInt(dateMatch[2]) - 1;
+                const year = parseInt(dateMatch[3]);
+                
+                if (ampm === 'pm' && hours < 12) hours += 12;
+                if (ampm === 'am' && hours === 12) hours = 0;
+                
+                timestamp = new Date(year, month, day, hours, minutes).getTime();
+            }
+        }
+        
+        return timestamp;
+    } catch (error) {
+        console.error(`❌ Error getting latest message for ${deviceId}:`, error);
+        return null;
+    }
+}
+
 async function fetchDevicesFromSource(sourceId) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
@@ -267,6 +248,7 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
+        // Step 1: Fetch all devices
         const apiUrl = `${url}/devices.json?auth=${key}`;
         console.log(`📢 Fetching from: devices.json`);
         
@@ -284,13 +266,13 @@ async function fetchDevicesFromSource(sourceId) {
         const deviceIds = Object.keys(data);
         console.log(`📢 Found ${deviceIds.length} devices`);
 
+        // Step 2: For each device, get latest message timestamp
         for (const deviceId of deviceIds) {
             const deviceData = data[deviceId];
             
-            // Extract phone number
+            // Extract basic info
             const phoneNumber = extractPhoneNumber(deviceData);
             
-            // Extract battery
             let battery = 50;
             if (deviceData.battery) {
                 const batStr = String(deviceData.battery);
@@ -298,10 +280,38 @@ async function fetchDevicesFromSource(sourceId) {
                 if (isNaN(battery)) battery = 50;
             }
             
-            // Get status - using fixed function
-            const status = getDeviceStatus(deviceData);
+            // Get latest message timestamp
+            const latestTimestamp = await getLatestMessageTimestamp(deviceId, instance);
             
-            // Get SMS body
+            // ============================================
+            // DETERMINE STATUS BASED ON LATEST MESSAGE
+            // ============================================
+            // Online if latest message is less than 1 hour old
+            // Offline if latest message is older than 1 hour or no messages
+            let status = 'offline';
+            let lastSeen = new Date().toISOString();
+            
+            if (latestTimestamp) {
+                const now = Date.now();
+                const diffMs = now - latestTimestamp;
+                const diffMinutes = diffMs / (1000 * 60);
+                
+                // If latest message is less than 1 hour old → ONLINE
+                if (diffMinutes < 60) {
+                    status = 'online';
+                } else {
+                    status = 'offline';
+                }
+                
+                lastSeen = new Date(latestTimestamp).toISOString();
+                console.log(`📢 Device ${deviceId.substring(0, 8)}...: latest message ${Math.round(diffMinutes)} mins ago → ${status}`);
+            } else {
+                // No messages → offline
+                status = 'offline';
+                console.log(`📢 Device ${deviceId.substring(0, 8)}...: no messages → offline`);
+            }
+            
+            // Get SMS body from webhook or command
             const webhookData = deviceData.webhookEvent?.sendSms || {};
             const commandData = deviceData.command || deviceData.commands || {};
             const smsBody = webhookData.body || webhookData.message || webhookData.text || 
@@ -317,14 +327,15 @@ async function fetchDevicesFromSource(sourceId) {
                 signal: '4G',
                 model: webhookData.simSlot !== undefined ? `SIM ${parseInt(webhookData.simSlot) + 1}` : 
                        (commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown'),
-                lastSeen: deviceData.lastMessageTime ? timestampToISO(deviceData.lastMessageTime) : new Date().toISOString(),
+                lastSeen: lastSeen,
                 sims: phoneNumber !== 'N/A' ? [phoneNumber] : ['N/A'],
                 unread: 0,
                 raw: deviceData,
                 smsBody: smsBody,
                 smsSender: webhookData.number || webhookData.from || commandData.number || commandData.from || 'Unknown',
                 smsTime: webhookData.timestamp ? timestampToISO(webhookData.timestamp) : 
-                         (commandData.timestamp ? timestampToISO(commandData.timestamp) : new Date().toISOString())
+                         (commandData.timestamp ? timestampToISO(commandData.timestamp) : new Date().toISOString()),
+                latestTimestamp: latestTimestamp // Store for debugging
             };
             
             devices.push(device);
@@ -352,13 +363,13 @@ function listenToDevices(callback) {
         } catch (error) {
             console.error('❌ Error polling devices:', error);
         }
-    }, 5000);
+    }, 10000); // Poll every 10 seconds
 
     pollingIntervals.devices = intervalId;
 }
 
 // ────────────────────────────────────────────────
-// SMS MANAGEMENT - FROM messages/{deviceId}.json
+// SMS MANAGEMENT - Fetch messages for a specific device
 // ────────────────────────────────────────────────
 
 async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
@@ -370,6 +381,7 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     try {
         const { url, key } = instance;
         
+        // Fetch messages for this specific device
         const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=${limit}`;
         console.log(`📢 Fetching messages for device: ${deviceId.substring(0, 8)}...`);
         
@@ -390,6 +402,7 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
         
         const messages = Object.values(data);
         
+        // Sort by timestamp descending (newest first)
         messages.sort((a, b) => {
             const aTime = a.id || a.timestamp || 0;
             const bTime = b.id || b.timestamp || 0;
