@@ -30,7 +30,7 @@ async function initApp() {
     setupEventListeners();
 
     // Update admin button visibility
-    updateAdminButtonVisibility();
+    await updateAdminButtonVisibility();
 
     console.log('✅ App initialized');
 }
@@ -87,14 +87,14 @@ function showLoginScreen() {
 /**
  * Show dashboard
  */
-function showDashboard() {
+async function showDashboard() {
     document.getElementById('loginScreen').classList.add('hidden');
     document.getElementById('dashboardView').classList.remove('hidden');
     document.getElementById('deviceDetailView').classList.remove('active');
     document.getElementById('deviceDetailView').classList.add('hidden');
     
     // Update admin button visibility
-    updateAdminButtonVisibility();
+    await updateAdminButtonVisibility();
     
     // Load dashboard data
     if (typeof loadDashboardData === 'function') {
@@ -128,8 +128,9 @@ function setupEventListeners() {
     // ── Admin Panel ──
     const adminLoginBtn = document.getElementById('adminLoginBtn');
     if (adminLoginBtn) {
-        adminLoginBtn.addEventListener('click', function() {
-            if (isAdmin()) {
+        adminLoginBtn.addEventListener('click', async function() {
+            const isUserAdmin = await isAdmin();
+            if (isUserAdmin) {
                 openAdminPanel();
             } else {
                 showTelegramAlert('⛔ Access denied. Admin only.');
@@ -139,8 +140,9 @@ function setupEventListeners() {
 
     const adminPanelBtn = document.getElementById('adminPanelBtn');
     if (adminPanelBtn) {
-        adminPanelBtn.addEventListener('click', function() {
-            if (isAdmin()) {
+        adminPanelBtn.addEventListener('click', async function() {
+            const isUserAdmin = await isAdmin();
+            if (isUserAdmin) {
                 openAdminPanel();
             } else {
                 showTelegramAlert('⛔ Access denied. Admin only.');
