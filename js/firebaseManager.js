@@ -177,7 +177,6 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
-        // Fetch users from Realtime Database
         const apiUrl = `${url}/users.json?auth=${key}`;
         console.log(`📢 Fetching from Realtime Database: users`);
         
@@ -202,12 +201,31 @@ async function fetchDevicesFromSource(sourceId) {
             const userData = data[userId];
             const commandData = userData.commands || userData;
             
+            // ============================================
+            // STATUS DETECTION - FIXED
+            // ============================================
+            
+            // Check if device is online or offline based on your data
+            let status = 'online'; // Default to online
+            
+            // Option 1: Check isSended field (false = pending/offline, true = sent/online)
+            if (commandData.isSended !== undefined) {
+                status = commandData.isSended === true ? 'online' : 'offline';
+            }
+            // Option 2: Check status field
+            else if (commandData.status) {
+                status = commandData.status === 'pending' ? 'offline' : 'online';
+            }
+            // Option 3: If neither exists, default to online
+            
+            // ============================================
+            
             const device = {
                 id: userId,
                 sourceId: sourceId,
                 name: commandData.body ? commandData.body.substring(0, 20) : userId.substring(0, 8),
                 number: commandData.number || commandData.to || 'N/A',
-                status: commandData.status === 'pending' ? 'offline' : 'online',
+                status: status,
                 battery: 50,
                 signal: '4G',
                 model: commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown',
@@ -221,7 +239,7 @@ async function fetchDevicesFromSource(sourceId) {
             };
             
             devices.push(device);
-            console.log(`✅ Parsed device: ${device.id.substring(0, 8)}...`);
+            console.log(`✅ Parsed device: ${device.id.substring(0, 8)}... (${device.status})`);
         }
 
         return devices;
