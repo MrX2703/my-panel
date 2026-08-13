@@ -1,6 +1,6 @@
 /**
  * DEVICE DETAIL MODULE
- * Handles device detail view with Info, SMS, and Send tabs
+ * Handles device detail view with Info and SMS tabs (Send removed)
  */
 
 // ────────────────────────────────────────────────
@@ -27,7 +27,6 @@ function initDeviceDetail(device, sourceId) {
     loadInfoTab(device);
     loadSmsTab(device);
     setupDetailTabs();
-    setupSendSms(device);
 }
 
 function updateDetailHeader(device) {
@@ -44,7 +43,7 @@ function updateDetailHeader(device) {
 
 function populateSimSelectors(device) {
     const sims = device.sims || [device.number || 'N/A'];
-    const selectors = ['smsSimSelector', 'sendSimSelector'];
+    const selectors = ['smsSimSelector'];
 
     selectors.forEach(selectorId => {
         const select = document.getElementById(selectorId);
@@ -199,10 +198,9 @@ async function loadSmsTab(device) {
     }
 }
 
-// ────────────────────────────────────────────────
-// RENDER SMS MESSAGES - WITH TIME PARSING
-// ────────────────────────────────────────────────
-
+/**
+ * Render SMS messages with proper time display
+ */
 function renderSmsMessages(messages) {
     const feed = document.getElementById('smsFeed');
     if (!feed) return;
@@ -220,9 +218,6 @@ function renderSmsMessages(messages) {
     const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
 
     feed.innerHTML = displayMessages.map((msg, index) => {
-        // ============================================
-        // DIRECT TIME PARSING
-        // ============================================
         let timeDisplay = 'N/A';
         
         if (msg.time) {
@@ -351,94 +346,6 @@ function renderSmsMessages(messages) {
     feed.scrollTop = 0;
 }
 
-// ────────────────────────────────────────────────
-// SEND TAB
-// ────────────────────────────────────────────────
-
-function setupSendSms(device) {
-    const sendBtn = document.getElementById('sendSmsBtn');
-    const messageInput = document.getElementById('sendMessage');
-    const charCount = document.getElementById('charCount');
-
-    if (!sendBtn || !messageInput) return;
-
-    messageInput.addEventListener('input', function() {
-        const count = this.value.length;
-        if (charCount) {
-            charCount.textContent = count;
-        }
-    });
-
-    sendBtn.addEventListener('click', function() {
-        sendSmsMessage(device);
-    });
-
-    messageInput.addEventListener('keydown', function(e) {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendSmsMessage(device);
-        }
-    });
-}
-
-async function sendSmsMessage(device) {
-    const simSelector = document.getElementById('sendSimSelector');
-    const toInput = document.getElementById('sendToNumber');
-    const messageInput = document.getElementById('sendMessage');
-
-    const selectedSim = simSelector ? simSelector.value : (device.sims ? device.sims[0] : null);
-    const toNumber = toInput ? toInput.value.trim() : '';
-    const message = messageInput ? messageInput.value.trim() : '';
-
-    if (!toNumber) {
-        showTelegramAlert('Please enter a receiver number');
-        return;
-    }
-
-    if (!message) {
-        showTelegramAlert('Please enter a message');
-        return;
-    }
-
-    if (message.length > 160) {
-        showTelegramAlert('Message exceeds 160 characters');
-        return;
-    }
-
-    showTelegramConfirm(`Send SMS to ${toNumber}?\n\nFrom: ${selectedSim}\nMessage: ${message}`, async (confirmed) => {
-        if (!confirmed) return;
-
-        showLoading('Sending SMS...');
-
-        try {
-            const result = await sendSms(
-                device.id,
-                currentSourceId,
-                selectedSim,
-                toNumber,
-                message
-            );
-
-            if (result.success) {
-                if (toInput) toInput.value = '';
-                if (messageInput) messageInput.value = '';
-                if (document.getElementById('charCount')) {
-                    document.getElementById('charCount').textContent = '0';
-                }
-
-                showTelegramAlert('✅ SMS sent successfully!');
-                hapticFeedback('light');
-                switchTab('sms');
-            }
-        } catch (error) {
-            console.error('Error sending SMS:', error);
-            showTelegramAlert(`❌ Failed to send SMS: ${error.message || 'Unknown error'}`);
-        } finally {
-            hideLoading();
-        }
-    });
-}
-
 function goBackToDashboard() {
     if (smsUnsubscribe) {
         smsUnsubscribe();
@@ -466,6 +373,4 @@ window.switchTab = switchTab;
 window.loadInfoTab = loadInfoTab;
 window.loadSmsTab = loadSmsTab;
 window.renderSmsMessages = renderSmsMessages;
-window.setupSendSms = setupSendSms;
-window.sendSmsMessage = sendSmsMessage;
 window.goBackToDashboard = goBackToDashboard;
