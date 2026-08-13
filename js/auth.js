@@ -16,17 +16,33 @@ let currentUser = null;
 // ────────────────────────────────────────────────
 
 /**
- * Load access keys from localStorage
+ * Load access keys from JSON file or localStorage
  */
-function loadAccessKeys() {
+async function loadAccessKeys() {
+    try {
+        // First, try to load from JSON file
+        const response = await fetch('data/access-keys.json');
+        if (response.ok) {
+            const data = await response.json();
+            // Save to localStorage for faster access
+            localStorage.setItem(STORAGE_KEYS.ACCESS_KEYS, JSON.stringify(data));
+            return data;
+        }
+    } catch (e) {
+        console.log('Could not load access-keys.json, checking localStorage...');
+    }
+    
+    // Fallback: try localStorage
     try {
         const data = localStorage.getItem(STORAGE_KEYS.ACCESS_KEYS);
         if (data) {
             return JSON.parse(data);
         }
     } catch (e) {
-        console.error('Error loading access keys:', e);
+        console.error('Error loading access keys from localStorage:', e);
     }
+    
+    // If nothing found, return default empty
     return DEFAULT_ACCESS_KEYS;
 }
 
@@ -44,12 +60,12 @@ function saveAccessKeys(keys) {
 /**
  * Validate an access key
  */
-function validateAccessKey(key) {
+async function validateAccessKey(key) {
     if (!key || key.trim() === '') {
         return { valid: false, message: 'Please enter an access key' };
     }
 
-    const keysData = loadAccessKeys();
+    const keysData = await loadAccessKeys();
     const foundKey = keysData.keys.find(k => k.key === key.trim());
 
     if (!foundKey) {
@@ -142,8 +158,8 @@ function getAllAccessKeys() {
 /**
  * Login with access key
  */
-function loginWithKey(key) {
-    const result = validateAccessKey(key);
+async function loginWithKey(key) {
+    const result = await validateAccessKey(key);
     if (result.valid) {
         currentAccessKey = key;
         isLoggedIn = true;
@@ -163,7 +179,7 @@ function loginWithKey(key) {
 /**
  * Check if user is logged in
  */
-function isUserLoggedIn() {
+async function isUserLoggedIn() {
     if (isLoggedIn && currentAccessKey) {
         return true;
     }
@@ -171,7 +187,7 @@ function isUserLoggedIn() {
     // Check session
     const sessionKey = localStorage.getItem(STORAGE_KEYS.SESSION_KEY);
     if (sessionKey) {
-        const result = validateAccessKey(sessionKey);
+        const result = await validateAccessKey(sessionKey);
         if (result.valid) {
             currentAccessKey = sessionKey;
             isLoggedIn = true;
