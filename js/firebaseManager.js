@@ -22,6 +22,8 @@ let isInitialized = false;
 async function initFirebaseConnections() {
     try {
         const configs = loadFirebaseConfigs();
+        console.log('📢 Firebase configs loaded:', configs);
+        
         if (!configs || !configs.sources || configs.sources.length === 0) {
             console.log('📢 No Firebase sources configured');
             return false;
@@ -71,12 +73,6 @@ async function connectToFirebase(source) {
             projectId: url.replace('https://', '').replace('.firebaseio.com', ''),
             storageBucket: url.replace('https://', '').replace('.firebaseio.com', '.appspot.com'),
         };
-
-        console.log('📢 Firebase Config:', {
-            apiKey: key.substring(0, 10) + '...',
-            authDomain: firebaseConfig.authDomain,
-            projectId: firebaseConfig.projectId
-        });
 
         // Check if app already exists
         let app;
@@ -200,7 +196,6 @@ async function fetchDevicesFromSource(sourceId) {
             const data = doc.data();
             console.log(`📢 Device document: ${doc.id}`, data);
             
-            // Handle different field names
             const device = {
                 id: doc.id,
                 sourceId: sourceId,
@@ -249,7 +244,6 @@ function listenToDevices(callback) {
         const unsubscribe = instance.db.collection('devices')
             .onSnapshot((snapshot) => {
                 console.log(`📢 Device update detected in ${sourceId}`);
-                // Device data changed, refetch all
                 fetchAllDevices().then(() => {
                     if (callback) callback(allDevices);
                 });
@@ -284,7 +278,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
             .orderBy('timestamp', 'desc')
             .limit(limit);
 
-        // If SIM number is specified, filter by it
         if (simNumber && simNumber !== 'all') {
             query = query.where('simNumber', '==', simNumber);
         }
@@ -310,7 +303,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
         return messages;
     } catch (error) {
         console.error(`❌ Error fetching SMS for device ${deviceId}:`, error);
-        // Try fallback query without orderBy if index doesn't exist
         try {
             console.log('📢 Trying fallback query without orderBy...');
             let query = instance.db.collection('sms_messages')
@@ -335,7 +327,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
                     raw: data
                 });
             });
-            // Sort manually by time
             messages.sort((a, b) => new Date(b.time) - new Date(a.time));
             console.log(`📢 Fallback query returned ${messages.length} messages`);
             return messages;
@@ -418,16 +409,13 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             sentAt: new Date().toISOString()
         };
 
-        // Save to Firestore
         const docRef = await instance.db.collection('sms_messages').add(smsData);
         console.log(`✅ SMS sent successfully: ${docRef.id}`);
         
-        // Also update the device's last activity
         await instance.db.collection('devices').doc(deviceId).update({
             lastActivity: new Date().toISOString(),
             lastSms: new Date().toISOString()
         }).catch(() => {
-            // Ignore if device doesn't exist or can't update
             console.log('⚠️ Could not update device lastActivity');
         });
 
@@ -453,11 +441,17 @@ function loadFirebaseConfigs() {
     try {
         const data = localStorage.getItem(STORAGE_KEYS.FIREBASE_CONFIGS);
         if (data) {
-            return JSON.parse(data);
+            const parsed = JSON.parse(data);
+            if (parsed.sources && parsed.sources.length > 0) {
+                console.log('📢 Firebase configs loaded from localStorage:', parsed.sources.length);
+                return parsed;
+            }
         }
     } catch (e) {
-        console.error('Error loading Firebase configs:', e);
+        console.error('Error loading Firebase configs from localStorage:', e);
     }
+    
+    console.log('📢 No Firebase configs found in localStorage');
     return DEFAULT_FIREBASE_CONFIGS;
 }
 
@@ -467,6 +461,7 @@ function loadFirebaseConfigs() {
 function saveFirebaseConfigs(configs) {
     try {
         localStorage.setItem(STORAGE_KEYS.FIREBASE_CONFIGS, JSON.stringify(configs));
+        console.log('📢 Firebase configs saved to localStorage');
     } catch (e) {
         console.error('Error saving Firebase configs:', e);
     }
@@ -485,6 +480,7 @@ function addFirebaseSource(url, key) {
     };
     configs.sources.push(newSource);
     saveFirebaseConfigs(configs);
+    console.log('📢 Firebase source added:', newSource.id);
     return newSource;
 }
 
@@ -495,8 +491,8 @@ function removeFirebaseSource(sourceId) {
     const configs = loadFirebaseConfigs();
     configs.sources = configs.sources.filter(s => s.id !== sourceId);
     saveFirebaseConfigs(configs);
-    // Disconnect from Firebase
     disconnectFromFirebase(sourceId);
+    console.log('📢 Firebase source removed:', sourceId);
 }
 
 // ────────────────────────────────────────────────
