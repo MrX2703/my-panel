@@ -3,10 +3,6 @@
  * Handles admin panel: Access Keys and Firebase management
  */
 
-// ────────────────────────────────────────────────
-// STATE
-// ────────────────────────────────────────────────
-
 let pendingDeleteId = null;
 let pendingDeleteType = null;
 
@@ -209,7 +205,7 @@ function closeConfirmModal() {
 }
 
 // ────────────────────────────────────────────────
-// FIREBASE MANAGEMENT - SAVES TO FIRESTORE
+// FIREBASE MANAGEMENT - SAVES TO GITHUB
 // ────────────────────────────────────────────────
 
 async function loadFirebaseSourcesList() {
@@ -289,7 +285,7 @@ async function saveFirebaseSource() {
     }
     
     try {
-        // Add source - this saves to Firestore and localStorage
+        // Add source - this saves to GitHub and localStorage
         const newSource = await addFirebaseSource(url, key);
         console.log('📢 Source added:', newSource);
         
