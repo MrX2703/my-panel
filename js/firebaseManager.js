@@ -1,6 +1,6 @@
 /**
  * FIREBASE MANAGER - Realtime Database
- * Reads devices from 'devices' and messages from 'messages/{deviceId}'
+ * Reads devices from 'devices.json' and messages from 'messages/{deviceId}.json'
  */
 
 // ────────────────────────────────────────────────
@@ -89,6 +89,7 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
+        // Test connection using devices.json
         const testUrl = `${url}/devices.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
@@ -156,17 +157,13 @@ async function fetchAllDevices() {
 }
 
 /**
- * Get device status - FIXED for your data
+ * Get device status from your data
  * Your data has: "status": false → offline, "status": true → online
  */
 function getDeviceStatus(deviceData) {
-    // ============================================
-    // CHECK DIRECT STATUS FIELD
-    // ============================================
+    // Check direct status field
     if (deviceData.status !== undefined) {
         const statusValue = deviceData.status;
-        
-        // status: true → online, status: false → offline
         if (statusValue === true || statusValue === 'true' || statusValue === 'online') {
             return 'online';
         }
@@ -175,9 +172,7 @@ function getDeviceStatus(deviceData) {
         }
     }
     
-    // ============================================
-    // CHECK COMMAND STATUS
-    // ============================================
+    // Check command status
     const cmdData = deviceData.command || deviceData.commands || {};
     if (cmdData.status) {
         if (cmdData.status === 'pending' || cmdData.status === 'offline') {
@@ -188,9 +183,7 @@ function getDeviceStatus(deviceData) {
         }
     }
     
-    // ============================================
-    // CHECK WEBHOOK STATUS
-    // ============================================
+    // Check webhook status
     const webhookData = deviceData.webhookEvent?.sendSms || {};
     if (webhookData.status) {
         if (webhookData.status === 'pending' || webhookData.status === 'offline') {
@@ -201,9 +194,6 @@ function getDeviceStatus(deviceData) {
         }
     }
     
-    // ============================================
-    // DEFAULT TO ONLINE
-    // ============================================
     return 'online';
 }
 
@@ -246,8 +236,9 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
+        // Use devices.json
         const apiUrl = `${url}/devices.json?auth=${key}`;
-        console.log(`📢 Fetching from Realtime Database: devices.json`);
+        console.log(`📢 Fetching from: devices.json`);
         
         const response = await fetch(apiUrl);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -266,14 +257,10 @@ async function fetchDevicesFromSource(sourceId) {
         for (const deviceId of deviceIds) {
             const deviceData = data[deviceId];
             
-            // ============================================
-            // EXTRACT PHONE NUMBER
-            // ============================================
+            // Extract phone number
             const phoneNumber = extractPhoneNumber(deviceData);
             
-            // ============================================
-            // EXTRACT BATTERY
-            // ============================================
+            // Extract battery
             let battery = 50;
             if (deviceData.battery) {
                 const batStr = String(deviceData.battery);
@@ -281,20 +268,13 @@ async function fetchDevicesFromSource(sourceId) {
                 if (isNaN(battery)) battery = 50;
             }
             
-            // ============================================
-            // STATUS - USING FIXED FUNCTION
-            // ============================================
+            // Get status
             const status = getDeviceStatus(deviceData);
             
-            // ============================================
-            // SMS BODY
-            // ============================================
+            // Get SMS body
             const commandData = deviceData.command || deviceData.commands || deviceData.webhookEvent?.sendSms || {};
             const smsBody = commandData.body || commandData.message || commandData.text || '';
             
-            // ============================================
-            // BUILD DEVICE OBJECT
-            // ============================================
             const device = {
                 id: deviceId,
                 sourceId: sourceId,
@@ -315,7 +295,6 @@ async function fetchDevicesFromSource(sourceId) {
             
             devices.push(device);
             
-            // Log status for debugging
             const statusIcon = status === 'online' ? '🟢' : '🔴';
             console.log(`${statusIcon} Device: ${device.id.substring(0, 8)}... → ${device.number} (${status})`);
         }
