@@ -11,6 +11,82 @@ let firebaseInstances = {};
 let allDevices = [];
 let deviceListeners = {};
 let isInitialized = false;
+let firebaseConfigsCache = null;
+
+// ────────────────────────────────────────────────
+// CONFIG LOADING
+// ────────────────────────────────────────────────
+
+/**
+ * Load Firebase configs from JSON file
+ */
+function loadFirebaseConfigs() {
+    console.log('📢 Loading Firebase configs from JSON file...');
+    try {
+        // Try to get from memory cache first
+        if (firebaseConfigsCache && firebaseConfigsCache.sources && firebaseConfigsCache.sources.length > 0) {
+            console.log('📢 Using cached Firebase configs:', firebaseConfigsCache.sources.length);
+            return firebaseConfigsCache;
+        }
+        
+        // Try localStorage as fallback
+        const data = localStorage.getItem('firebase_configs');
+        if (data) {
+            const parsed = JSON.parse(data);
+            if (parsed.sources && parsed.sources.length > 0) {
+                console.log('📢 Firebase configs loaded from localStorage:', parsed.sources.length);
+                firebaseConfigsCache = parsed;
+                return parsed;
+            }
+        }
+    } catch (e) {
+        console.error('Error loading Firebase configs:', e);
+    }
+    
+    console.log('📢 No Firebase configs found');
+    return { sources: [] };
+}
+
+/**
+ * Save Firebase configs to localStorage and cache
+ */
+function saveFirebaseConfigsToLocal(configs) {
+    try {
+        localStorage.setItem('firebase_configs', JSON.stringify(configs));
+        firebaseConfigsCache = configs;
+        console.log('📢 Firebase configs saved to localStorage');
+    } catch (e) {
+        console.error('Error saving Firebase configs:', e);
+    }
+}
+
+/**
+ * Add a new Firebase source
+ */
+function addFirebaseSource(url, key) {
+    const configs = loadFirebaseConfigs();
+    const newSource = {
+        id: generateId(),
+        url: url,
+        key: key,
+        addedAt: getCurrentISO()
+    };
+    configs.sources.push(newSource);
+    saveFirebaseConfigsToLocal(configs);
+    console.log('📢 Firebase source added:', newSource.id);
+    return newSource;
+}
+
+/**
+ * Remove a Firebase source
+ */
+function removeFirebaseSource(sourceId) {
+    const configs = loadFirebaseConfigs();
+    configs.sources = configs.sources.filter(s => s.id !== sourceId);
+    saveFirebaseConfigsToLocal(configs);
+    disconnectFromFirebase(sourceId);
+    console.log('📢 Firebase source removed:', sourceId);
+}
 
 // ────────────────────────────────────────────────
 // INITIALIZATION
@@ -21,8 +97,10 @@ let isInitialized = false;
  */
 async function initFirebaseConnections() {
     try {
+        // First load from JSON file via app.js
+        // The configs are already loaded by app.js, but we need to check localStorage
         const configs = loadFirebaseConfigs();
-        console.log('📢 Firebase configs loaded:', configs);
+        console.log('📢 Firebase configs:', configs);
         
         if (!configs || !configs.sources || configs.sources.length === 0) {
             console.log('📢 No Firebase sources configured');
@@ -431,74 +509,13 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
 }
 
 // ────────────────────────────────────────────────
-// STORAGE HELPERS
-// ────────────────────────────────────────────────
-
-/**
- * Load Firebase configs from localStorage
- */
-function loadFirebaseConfigs() {
-    try {
-        const data = localStorage.getItem(STORAGE_KEYS.FIREBASE_CONFIGS);
-        if (data) {
-            const parsed = JSON.parse(data);
-            if (parsed.sources && parsed.sources.length > 0) {
-                console.log('📢 Firebase configs loaded from localStorage:', parsed.sources.length);
-                return parsed;
-            }
-        }
-    } catch (e) {
-        console.error('Error loading Firebase configs from localStorage:', e);
-    }
-    
-    console.log('📢 No Firebase configs found in localStorage');
-    return DEFAULT_FIREBASE_CONFIGS;
-}
-
-/**
- * Save Firebase configs to localStorage
- */
-function saveFirebaseConfigs(configs) {
-    try {
-        localStorage.setItem(STORAGE_KEYS.FIREBASE_CONFIGS, JSON.stringify(configs));
-        console.log('📢 Firebase configs saved to localStorage');
-    } catch (e) {
-        console.error('Error saving Firebase configs:', e);
-    }
-}
-
-/**
- * Add a new Firebase source
- */
-function addFirebaseSource(url, key) {
-    const configs = loadFirebaseConfigs();
-    const newSource = {
-        id: generateId(),
-        url: url,
-        key: key,
-        addedAt: getCurrentISO()
-    };
-    configs.sources.push(newSource);
-    saveFirebaseConfigs(configs);
-    console.log('📢 Firebase source added:', newSource.id);
-    return newSource;
-}
-
-/**
- * Remove a Firebase source
- */
-function removeFirebaseSource(sourceId) {
-    const configs = loadFirebaseConfigs();
-    configs.sources = configs.sources.filter(s => s.id !== sourceId);
-    saveFirebaseConfigs(configs);
-    disconnectFromFirebase(sourceId);
-    console.log('📢 Firebase source removed:', sourceId);
-}
-
-// ────────────────────────────────────────────────
 // EXPOSE TO GLOBAL SCOPE
 // ────────────────────────────────────────────────
 
+window.loadFirebaseConfigs = loadFirebaseConfigs;
+window.saveFirebaseConfigsToLocal = saveFirebaseConfigsToLocal;
+window.addFirebaseSource = addFirebaseSource;
+window.removeFirebaseSource = removeFirebaseSource;
 window.initFirebaseConnections = initFirebaseConnections;
 window.connectToFirebase = connectToFirebase;
 window.disconnectFromFirebase = disconnectFromFirebase;
@@ -508,9 +525,5 @@ window.listenToDevices = listenToDevices;
 window.fetchSmsForDevice = fetchSmsForDevice;
 window.listenToSms = listenToSms;
 window.sendSms = sendSms;
-window.loadFirebaseConfigs = loadFirebaseConfigs;
-window.saveFirebaseConfigs = saveFirebaseConfigs;
-window.addFirebaseSource = addFirebaseSource;
-window.removeFirebaseSource = removeFirebaseSource;
 window.firebaseInstances = firebaseInstances;
 window.allDevices = allDevices;
