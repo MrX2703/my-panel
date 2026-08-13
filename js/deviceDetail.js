@@ -153,7 +153,7 @@ function loadInfoTab(device) {
 }
 
 // ────────────────────────────────────────────────
-// SMS TAB - WITH FIXED TIME DISPLAY
+// SMS TAB - WITH TIME DISPLAY FIX
 // ────────────────────────────────────────────────
 
 async function loadSmsTab(device) {
@@ -199,6 +199,9 @@ async function loadSmsTab(device) {
     }
 }
 
+/**
+ * Render SMS messages with proper time display
+ */
 function renderSmsMessages(messages) {
     const feed = document.getElementById('smsFeed');
     if (!feed) return;
@@ -213,29 +216,25 @@ function renderSmsMessages(messages) {
         return;
     }
 
-    // Take only latest 100 messages
     const displayMessages = messages.slice(0, APP_CONFIG.maxSmsDisplay);
 
     feed.innerHTML = displayMessages.map((msg, index) => {
-        // Format the time properly
+        // timeAgo() now handles "06-08-2026 | 10:19 pm" format via parseDate()
         let timeDisplay = 'N/A';
         if (msg.time) {
-            // Check if it's already formatted
-            if (msg.time.includes(' ') || msg.time.includes('-')) {
-                timeDisplay = timeAgo(msg.time);
-            } else {
-                // Try to parse as timestamp
-                const ts = parseInt(msg.time);
-                if (!isNaN(ts)) {
-                    timeDisplay = timeAgoFromTimestamp(ts);
-                } else {
-                    timeDisplay = timeAgo(msg.time);
-                }
-            }
+            timeDisplay = timeAgo(msg.time);
         }
         
+        // Check if message is new (less than 1 hour old)
+        const isNew = msg.time && (() => {
+            const date = parseDate(msg.time);
+            if (!date) return false;
+            const diffMs = Date.now() - date.getTime();
+            return diffMs < 3600000; // less than 1 hour
+        })();
+        
         return `
-            <div class="sms-item ${index === 0 ? 'new' : ''}">
+            <div class="sms-item ${isNew ? 'new' : ''}">
                 <div class="sms-header">
                     <span class="sms-sender">📨 ${msg.sender}</span>
                     <span class="sms-time">${timeDisplay}</span>
